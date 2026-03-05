@@ -69,7 +69,7 @@ function getVisibleCols(includeColumns) {
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns }) {
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, sectionOrder }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -161,92 +161,101 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     );
   }
 
+  function renderSummaryPage() {
+    return (
+      <Page size="LETTER" style={s.page} key="summary">
+        <View style={s.header}>
+          <Text style={s.title}>Portfolio Allocation Report</Text>
+          <Text style={s.subtitle}>
+            {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
+          </Text>
+        </View>
+
+        <View style={s.tableHeader}>
+          {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
+        </View>
+
+        {sections.map(sec => {
+          const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.targetPct));
+          const sectionTotal = getSectionTotal(summaryRows, sec.categories);
+          return (
+            <View key={sec.name}>
+              <Text style={s.sectionTitle}>{sec.name}</Text>
+              {sectionRows.map((r, i) => renderSumRow(r, i))}
+              {renderTotalRow(`${sec.name} Total`, sectionTotal)}
+            </View>
+          );
+        })}
+        {renderTotalRow('Grand Total', grandTotal)}
+
+        {chartImage && <Image src={chartImage} style={s.chartImg} />}
+      </Page>
+    );
+  }
+
+  function renderCapitalizationPage() {
+    return (
+      <Page size="LETTER" style={s.page} key="capitalization">
+        <View style={s.header}>
+          <Text style={s.title}>Equity Capitalization Breakdown</Text>
+          <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
+        </View>
+        {renderCapSection('Domestic Equity', capData.domestic)}
+        {renderCapSection('Foreign Equity', capData.foreign)}
+        {renderCapSection('Combined Equity', capData.combined)}
+      </Page>
+    );
+  }
+
+  function renderSecuritiesPages() {
+    const visCols = getVisibleCols(includeColumns);
+    const valGetters = {
+      ticker: (h) => h.ticker,
+      security: (h) => h.securityName,
+      style: (h) => h.style,
+      qty: (h) => h.quantity?.toFixed(2),
+      price: (h) => h.price?.toFixed(2),
+      mktValue: (h) => formatCurrency(getMarketValue(h)),
+      change: (h) => formatCurrency(h.proposedChange || 0),
+      postValue: (h) => formatCurrency(getPostValue(h)),
+      pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
+    };
+    return accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
+      const acctTotal = getAccountTotal(acct.holdings);
+      return (
+        <Page key={acct.id} size="LETTER" style={s.page}>
+          <View style={s.header}>
+            <Text style={s.title}>{acct.name}</Text>
+            <Text style={s.subtitle}>Total: {formatCurrency(acctTotal)}</Text>
+          </View>
+          <View style={s.tableHeader}>
+            {visCols.map(col => (
+              <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>
+            ))}
+          </View>
+          {acct.holdings.filter(h => h.ticker).map((h, i) => (
+            <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+              {visCols.map(col => (
+                <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
+                  {valGetters[col.key](h, acctTotal)}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </Page>
+      );
+    });
+  }
+
+  const pageRenderers = {
+    summary: renderSummaryPage,
+    capitalization: renderCapitalizationPage,
+    securities: renderSecuritiesPages,
+  };
+
   return (
     <Document>
-      {/* Summary Page */}
-      {includeSections.summary && (
-        <Page size="LETTER" style={s.page}>
-          <View style={s.header}>
-            <Text style={s.title}>Portfolio Allocation Report</Text>
-            <Text style={s.subtitle}>
-              {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
-            </Text>
-          </View>
-
-          <View style={s.tableHeader}>
-            {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
-          </View>
-
-          {sections.map(sec => {
-            const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.targetPct));
-            const sectionTotal = getSectionTotal(summaryRows, sec.categories);
-            return (
-              <View key={sec.name}>
-                <Text style={s.sectionTitle}>{sec.name}</Text>
-                {sectionRows.map((r, i) => renderSumRow(r, i))}
-                {renderTotalRow(`${sec.name} Total`, sectionTotal)}
-              </View>
-            );
-          })}
-          {renderTotalRow('Grand Total', grandTotal)}
-
-          {chartImage && <Image src={chartImage} style={s.chartImg} />}
-        </Page>
-      )}
-
-      {/* Capitalization Page */}
-      {includeSections.capitalization && (
-        <Page size="LETTER" style={s.page}>
-          <View style={s.header}>
-            <Text style={s.title}>Equity Capitalization Breakdown</Text>
-            <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
-          </View>
-          {renderCapSection('Domestic Equity', capData.domestic)}
-          {renderCapSection('Foreign Equity', capData.foreign)}
-          {renderCapSection('Combined Equity', capData.combined)}
-        </Page>
-      )}
-
-      {/* Holdings Detail per Account */}
-      {includeSections.securities && (() => {
-        const visCols = getVisibleCols(includeColumns);
-        const valGetters = {
-          ticker: (h) => h.ticker,
-          security: (h) => h.securityName,
-          style: (h) => h.style,
-          qty: (h) => h.quantity?.toFixed(2),
-          price: (h) => h.price?.toFixed(2),
-          mktValue: (h) => formatCurrency(getMarketValue(h)),
-          change: (h) => formatCurrency(h.proposedChange || 0),
-          postValue: (h) => formatCurrency(getPostValue(h)),
-          pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
-        };
-        return accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
-          const acctTotal = getAccountTotal(acct.holdings);
-          return (
-            <Page key={acct.id} size="LETTER" style={s.page}>
-              <View style={s.header}>
-                <Text style={s.title}>{acct.name}</Text>
-                <Text style={s.subtitle}>Total: {formatCurrency(acctTotal)}</Text>
-              </View>
-              <View style={s.tableHeader}>
-                {visCols.map(col => (
-                  <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>
-                ))}
-              </View>
-              {acct.holdings.filter(h => h.ticker).map((h, i) => (
-                <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
-                  {visCols.map(col => (
-                    <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
-                      {valGetters[col.key](h, acctTotal)}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </Page>
-          );
-        });
-      })()}
+      {sectionOrder.filter(key => includeSections[key]).map(key => pageRenderers[key]())}
     </Document>
   );
 }
@@ -268,12 +277,22 @@ export default function PdfPanel() {
     postValue: true,
     pctAcct: true,
   });
+  const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities']);
 
   const toggleSection = (key) => {
     setIncludeSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
   const toggleColumn = (key) => {
     setIncludeColumns(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  const moveSection = (index, direction) => {
+    setSectionOrder(prev => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   };
 
   const anySelected = includeSections.summary || includeSections.capitalization || includeSections.securities;
@@ -320,6 +339,7 @@ export default function PdfPanel() {
           theme={theme}
           includeSections={includeSections}
           includeColumns={includeColumns}
+          sectionOrder={sectionOrder}
         />
       ).toBlob();
 
@@ -363,6 +383,35 @@ export default function PdfPanel() {
                 </div>
               </label>
             ))}
+          </div>
+        </div>
+
+        {/* Section order */}
+        <div className="bg-dark-bg rounded-lg p-4 border border-border">
+          <p className="text-sm text-steel-blue mb-3">Reorder sections in the PDF:</p>
+          <div className="space-y-1">
+            {sectionOrder.map((key, idx) => {
+              const labels = { summary: 'Summary', capitalization: 'Capitalization', securities: 'Securities' };
+              return (
+                <div key={key} className="flex items-center gap-2 py-1.5 px-3 bg-alt-bg rounded border border-border">
+                  <span className="text-sm flex-1">{labels[key]}</span>
+                  <button
+                    onClick={() => moveSection(idx, -1)}
+                    disabled={idx === 0}
+                    className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    onClick={() => moveSection(idx, 1)}
+                    disabled={idx === sectionOrder.length - 1}
+                    className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
+                  >
+                    ▼
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
 
