@@ -51,7 +51,7 @@ const stylesCache = {
   light: makeStyles(PALETTES.light),
 };
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme }) {
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -145,48 +145,52 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   return (
     <Document>
-      {/* Page 1: Cover + Summary */}
-      <Page size="LETTER" style={s.page}>
-        <View style={s.header}>
-          <Text style={s.title}>Portfolio Allocation Report</Text>
-          <Text style={s.subtitle}>
-            {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
-          </Text>
-        </View>
+      {/* Summary Page */}
+      {includeSections.summary && (
+        <Page size="LETTER" style={s.page}>
+          <View style={s.header}>
+            <Text style={s.title}>Portfolio Allocation Report</Text>
+            <Text style={s.subtitle}>
+              {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
+            </Text>
+          </View>
 
-        <View style={s.tableHeader}>
-          {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
-        </View>
+          <View style={s.tableHeader}>
+            {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
+          </View>
 
-        {sections.map(sec => {
-          const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.targetPct));
-          const sectionTotal = getSectionTotal(summaryRows, sec.categories);
-          return (
-            <View key={sec.name}>
-              <Text style={s.sectionTitle}>{sec.name}</Text>
-              {sectionRows.map((r, i) => renderSumRow(r, i))}
-              {renderTotalRow(`${sec.name} Total`, sectionTotal)}
-            </View>
-          );
-        })}
-        {renderTotalRow('Grand Total', grandTotal)}
+          {sections.map(sec => {
+            const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.targetPct));
+            const sectionTotal = getSectionTotal(summaryRows, sec.categories);
+            return (
+              <View key={sec.name}>
+                <Text style={s.sectionTitle}>{sec.name}</Text>
+                {sectionRows.map((r, i) => renderSumRow(r, i))}
+                {renderTotalRow(`${sec.name} Total`, sectionTotal)}
+              </View>
+            );
+          })}
+          {renderTotalRow('Grand Total', grandTotal)}
 
-        {chartImage && <Image src={chartImage} style={s.chartImg} />}
-      </Page>
+          {chartImage && <Image src={chartImage} style={s.chartImg} />}
+        </Page>
+      )}
 
-      {/* Page 2: Capitalization */}
-      <Page size="LETTER" style={s.page}>
-        <View style={s.header}>
-          <Text style={s.title}>Equity Capitalization Breakdown</Text>
-          <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
-        </View>
-        {renderCapSection('Domestic Equity', capData.domestic)}
-        {renderCapSection('Foreign Equity', capData.foreign)}
-        {renderCapSection('Combined Equity', capData.combined)}
-      </Page>
+      {/* Capitalization Page */}
+      {includeSections.capitalization && (
+        <Page size="LETTER" style={s.page}>
+          <View style={s.header}>
+            <Text style={s.title}>Equity Capitalization Breakdown</Text>
+            <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
+          </View>
+          {renderCapSection('Domestic Equity', capData.domestic)}
+          {renderCapSection('Foreign Equity', capData.foreign)}
+          {renderCapSection('Combined Equity', capData.combined)}
+        </Page>
+      )}
 
-      {/* Page 3+: Holdings Detail per Account */}
-      {accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
+      {/* Holdings Detail per Account */}
+      {includeSections.securities && accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
         const acctTotal = getAccountTotal(acct.holdings);
         return (
           <Page key={acct.id} size="LETTER" style={s.page}>
@@ -225,6 +229,17 @@ export default function PdfPanel() {
   const { accounts, assumptions, theme } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [generating, setGenerating] = useState(false);
+  const [includeSections, setIncludeSections] = useState({
+    summary: true,
+    capitalization: true,
+    securities: true,
+  });
+
+  const toggleSection = (key) => {
+    setIncludeSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const anySelected = includeSections.summary || includeSections.capitalization || includeSections.securities;
 
   const { rows: summaryRows, total: summaryTotal } = useMemo(
     () => getSummaryData(accounts, targetProfile),
@@ -264,8 +279,9 @@ export default function PdfPanel() {
           sections={sections}
           capData={capData}
           accounts={accounts}
-          chartImage={chartImage}
+          chartImage={includeSections.summary ? chartImage : null}
           theme={theme}
+          includeSections={includeSections}
         />
       ).toBlob();
 
@@ -287,21 +303,47 @@ export default function PdfPanel() {
       <h2 className="text-xl font-bold text-accent mb-4">Generate PDF Report</h2>
 
       <div className="space-y-4 max-w-lg">
+        {/* Section selection */}
         <div className="bg-dark-bg rounded-lg p-4 border border-border">
-          <p className="text-sm text-steel-blue mb-3">
-            Click below to generate and download the full PDF report including the pie chart.
-          </p>
+          <p className="text-sm text-steel-blue mb-3">Select sections to include in the report:</p>
+          <div className="space-y-2">
+            {[
+              { key: 'summary', label: 'Summary', desc: 'Household rollup table + pie chart' },
+              { key: 'capitalization', label: 'Capitalization', desc: 'Equity style breakdown (Domestic / Foreign / Combined)' },
+              { key: 'securities', label: 'Securities', desc: 'Per-account holdings detail' },
+            ].map(({ key, label, desc }) => (
+              <label key={key} className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={includeSections[key]}
+                  onChange={() => toggleSection(key)}
+                  className="accent-accent mt-0.5"
+                />
+                <div>
+                  <span className="text-sm font-medium group-hover:text-accent transition-colors">{label}</span>
+                  <span className="block text-xs text-text-primary/50">{desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Download button */}
+        <div className="bg-dark-bg rounded-lg p-4 border border-border">
           <button
             onClick={handleGenerate}
-            disabled={generating}
+            disabled={generating || !anySelected}
             className="px-4 py-2 bg-accent/80 border border-accent text-title-bg text-sm font-semibold rounded hover:bg-accent disabled:opacity-50"
           >
             {generating ? 'Generating PDF...' : `Download ${fileName}`}
           </button>
+          {!anySelected && (
+            <p className="text-negative text-xs mt-2">Select at least one section to generate the report.</p>
+          )}
         </div>
 
         <div className="text-xs text-text-primary/40">
-          Report includes: Summary table, pie chart, capitalization breakdown, and per-account holdings detail.
+          The report will include a cover header on the first page regardless of section selection.
         </div>
       </div>
     </div>
