@@ -1,9 +1,56 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { TICKER_DB } from '../data/tickerDb';
 import { STYLE_OPTIONS } from '../data/styleMapping';
 import { getMarketValue, getPostValue, getAccountTotal } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
+
+function formatWithCommas(value, decimals = 2) {
+  if (value === 0 || value === '' || value == null) return '';
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(num)) return '';
+  return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function NumericInput({ value, onChange, className, placeholder, decimals = 2 }) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState('');
+  const inputRef = useRef(null);
+
+  const handleFocus = () => {
+    setEditing(true);
+    setRaw(value ? String(value) : '');
+  };
+
+  const handleChange = (e) => {
+    setRaw(e.target.value);
+  };
+
+  const handleBlur = () => {
+    setEditing(false);
+    const parsed = parseFloat(raw.replace(/,/g, '')) || 0;
+    onChange(parsed);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') inputRef.current?.blur();
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="decimal"
+      value={editing ? raw : formatWithCommas(value, decimals)}
+      onFocus={handleFocus}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={className}
+      placeholder={placeholder}
+    />
+  );
+}
 
 function HoldingRow({ holding, accountId, accountTotal }) {
   const { updateHolding, removeHolding } = useAppContext();
@@ -63,32 +110,28 @@ function HoldingRow({ holding, accountId, accountTotal }) {
         </select>
       </td>
       <td className="px-2 py-1">
-        <input
-          type="number"
-          value={holding.quantity || ''}
-          onChange={e => updateHolding(accountId, holding.id, 'quantity', parseFloat(e.target.value) || 0)}
+        <NumericInput
+          value={holding.quantity}
+          onChange={v => updateHolding(accountId, holding.id, 'quantity', v)}
           className="w-24 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
           placeholder="0.00"
         />
       </td>
       <td className="px-2 py-1">
-        <input
-          type="number"
-          value={holding.price || ''}
-          onChange={e => updateHolding(accountId, holding.id, 'price', parseFloat(e.target.value) || 0)}
+        <NumericInput
+          value={holding.price}
+          onChange={v => updateHolding(accountId, holding.id, 'price', v)}
           className="w-24 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
           placeholder="0.00"
-          step="0.01"
         />
       </td>
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(mv)}</td>
       <td className="px-2 py-1">
-        <input
-          type="number"
-          value={holding.proposedChange || ''}
-          onChange={e => updateHolding(accountId, holding.id, 'proposedChange', parseFloat(e.target.value) || 0)}
+        <NumericInput
+          value={holding.proposedChange}
+          onChange={v => updateHolding(accountId, holding.id, 'proposedChange', v)}
           className="w-28 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
-          placeholder="0"
+          placeholder="0.00"
         />
       </td>
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(pv)}</td>
