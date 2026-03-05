@@ -52,8 +52,8 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
   );
 }
 
-function HoldingRow({ holding, accountId, accountTotal }) {
-  const { updateHolding, removeHolding } = useAppContext();
+function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
+  const { updateHolding, removeHolding, moveHolding } = useAppContext();
   const [notFound, setNotFound] = useState(false);
 
   const mv = getMarketValue(holding);
@@ -137,13 +137,33 @@ function HoldingRow({ holding, accountId, accountTotal }) {
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(pv)}</td>
       <td className="px-2 py-1 text-sm text-right">{formatPercent(pctOfAccount)}</td>
       <td className="px-2 py-1">
-        <button
-          onClick={() => removeHolding(accountId, holding.id)}
-          className="text-negative/70 hover:text-negative text-lg leading-none"
-          title="Remove holding"
-        >
-          &times;
-        </button>
+        <div className="flex items-center gap-1">
+          <div className="flex flex-col">
+            <button
+              onClick={() => moveHolding(accountId, holding.id, -1)}
+              disabled={isFirst}
+              className="text-steel-blue/70 hover:text-steel-blue text-xs leading-none disabled:opacity-20 disabled:cursor-default"
+              title="Move up"
+            >
+              &#9650;
+            </button>
+            <button
+              onClick={() => moveHolding(accountId, holding.id, 1)}
+              disabled={isLast}
+              className="text-steel-blue/70 hover:text-steel-blue text-xs leading-none disabled:opacity-20 disabled:cursor-default"
+              title="Move down"
+            >
+              &#9660;
+            </button>
+          </div>
+          <button
+            onClick={() => removeHolding(accountId, holding.id)}
+            className="text-negative/70 hover:text-negative text-lg leading-none"
+            title="Remove holding"
+          >
+            &times;
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -205,12 +225,14 @@ function AccountTab({ account }) {
             </tr>
           </thead>
           <tbody>
-            {account.holdings.map(h => (
+            {account.holdings.map((h, idx) => (
               <HoldingRow
                 key={h.id}
                 holding={h}
                 accountId={account.id}
                 accountTotal={accountTotal}
+                isFirst={idx === 0}
+                isLast={idx === account.holdings.length - 1}
               />
             ))}
           </tbody>
@@ -267,6 +289,8 @@ export default function SecuritiesPanel() {
           </button>
         )}
       </div>
+
+      <p className="text-xs text-steel-blue/60 mb-4">Tip: Use ticker <span className="font-semibold text-steel-blue/80">$$$$</span> for cash positions.</p>
 
       {activeAccount && <AccountTab key={activeAccount.id} account={activeAccount} />}
     </div>

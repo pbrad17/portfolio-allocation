@@ -99,6 +99,20 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  const moveHolding = useCallback((accountId, holdingId, direction) => {
+    setAccounts(prev =>
+      prev.map(a => {
+        if (a.id !== accountId) return a;
+        const idx = a.holdings.findIndex(h => h.id === holdingId);
+        const newIdx = idx + direction;
+        if (newIdx < 0 || newIdx >= a.holdings.length) return a;
+        const updated = [...a.holdings];
+        [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
+        return { ...a, holdings: updated };
+      })
+    );
+  }, []);
+
   const loadSession = useCallback((data) => {
     if (data.assumptions) setAssumptions(prev => ({ ...prev, ...data.assumptions }));
     if (data.accounts) {
@@ -169,7 +183,7 @@ export function AppProvider({ children }) {
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,
     addAccount, removeAccount, renameAccount,
-    updateHolding, addHolding, removeHolding,
+    updateHolding, addHolding, removeHolding, moveHolding,
     loadSession,
     priceDate, priceLoading, refreshPrices,
   };
