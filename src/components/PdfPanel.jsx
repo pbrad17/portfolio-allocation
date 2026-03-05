@@ -51,7 +51,25 @@ const stylesCache = {
   light: makeStyles(PALETTES.light),
 };
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections }) {
+const ALL_HOLD_COLS = [
+  { key: 'ticker', label: 'Ticker', width: 8, align: 'left', toggleable: true },
+  { key: 'security', label: 'Security', width: 18, align: 'left', toggleable: false },
+  { key: 'style', label: 'Style', width: 16, align: 'left', toggleable: false },
+  { key: 'qty', label: 'Qty', width: 8, align: 'right', toggleable: true },
+  { key: 'price', label: 'Price', width: 8, align: 'right', toggleable: true },
+  { key: 'mktValue', label: 'Mkt Value', width: 12, align: 'right', toggleable: false },
+  { key: 'change', label: 'Change', width: 10, align: 'right', toggleable: true },
+  { key: 'postValue', label: 'Post Value', width: 12, align: 'right', toggleable: true },
+  { key: 'pctAcct', label: '% Acct', width: 8, align: 'right', toggleable: true },
+];
+
+function getVisibleCols(includeColumns) {
+  const visible = ALL_HOLD_COLS.filter(c => !c.toggleable || includeColumns[c.key]);
+  const totalW = visible.reduce((s, c) => s + c.width, 0);
+  return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
+}
+
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -190,37 +208,45 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       )}
 
       {/* Holdings Detail per Account */}
-      {includeSections.securities && accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
-        const acctTotal = getAccountTotal(acct.holdings);
-        return (
-          <Page key={acct.id} size="LETTER" style={s.page}>
-            <View style={s.header}>
-              <Text style={s.title}>{acct.name}</Text>
-              <Text style={s.subtitle}>Total: {formatCurrency(acctTotal)}</Text>
-            </View>
-            <View style={s.tableHeader}>
-              {['Ticker', 'Security', 'Style', 'Qty', 'Price', 'Mkt Value', 'Change', 'Post Value', '% Acct'].map((h, i) => {
-                const w = ['8%', '18%', '16%', '8%', '8%', '12%', '10%', '12%', '8%'][i];
-                return <Text key={h} style={[s.th, { width: w }]}>{h}</Text>;
-              })}
-            </View>
-            {acct.holdings.filter(h => h.ticker).map((h, i) => {
-              const mv = getMarketValue(h);
-              const pv = getPostValue(h);
-              const pct = acctTotal > 0 ? pv / acctTotal : 0;
-              const vals = [h.ticker, h.securityName, h.style, h.quantity?.toFixed(2), h.price?.toFixed(2), formatCurrency(mv), formatCurrency(h.proposedChange || 0), formatCurrency(pv), formatPercent(pct)];
-              return (
+      {includeSections.securities && (() => {
+        const visCols = getVisibleCols(includeColumns);
+        const valGetters = {
+          ticker: (h) => h.ticker,
+          security: (h) => h.securityName,
+          style: (h) => h.style,
+          qty: (h) => h.quantity?.toFixed(2),
+          price: (h) => h.price?.toFixed(2),
+          mktValue: (h) => formatCurrency(getMarketValue(h)),
+          change: (h) => formatCurrency(h.proposedChange || 0),
+          postValue: (h) => formatCurrency(getPostValue(h)),
+          pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
+        };
+        return accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
+          const acctTotal = getAccountTotal(acct.holdings);
+          return (
+            <Page key={acct.id} size="LETTER" style={s.page}>
+              <View style={s.header}>
+                <Text style={s.title}>{acct.name}</Text>
+                <Text style={s.subtitle}>Total: {formatCurrency(acctTotal)}</Text>
+              </View>
+              <View style={s.tableHeader}>
+                {visCols.map(col => (
+                  <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>
+                ))}
+              </View>
+              {acct.holdings.filter(h => h.ticker).map((h, i) => (
                 <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
-                  {vals.map((v, ci) => {
-                    const w = ['8%', '18%', '16%', '8%', '8%', '12%', '10%', '12%', '8%'][ci];
-                    return <Text key={ci} style={[s.cell, { width: w, textAlign: ci >= 3 ? 'right' : 'left' }]}>{v}</Text>;
-                  })}
+                  {visCols.map(col => (
+                    <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
+                      {valGetters[col.key](h, acctTotal)}
+                    </Text>
+                  ))}
                 </View>
-              );
-            })}
-          </Page>
-        );
-      })}
+              ))}
+            </Page>
+          );
+        });
+      })()}
     </Document>
   );
 }
@@ -234,9 +260,20 @@ export default function PdfPanel() {
     capitalization: true,
     securities: true,
   });
+  const [includeColumns, setIncludeColumns] = useState({
+    ticker: true,
+    qty: true,
+    price: true,
+    change: true,
+    postValue: true,
+    pctAcct: true,
+  });
 
   const toggleSection = (key) => {
     setIncludeSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  const toggleColumn = (key) => {
+    setIncludeColumns(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const anySelected = includeSections.summary || includeSections.capitalization || includeSections.securities;
@@ -282,6 +319,7 @@ export default function PdfPanel() {
           chartImage={includeSections.summary ? chartImage : null}
           theme={theme}
           includeSections={includeSections}
+          includeColumns={includeColumns}
         />
       ).toBlob();
 
@@ -296,7 +334,7 @@ export default function PdfPanel() {
       console.error('PDF generation failed:', e);
     }
     setGenerating(false);
-  }, [accounts, assumptions, summaryRows, summaryTotal, sections, capData, theme, fileName]);
+  }, [accounts, assumptions, summaryRows, summaryTotal, sections, capData, theme, fileName, includeColumns]);
 
   return (
     <div>
@@ -327,6 +365,34 @@ export default function PdfPanel() {
             ))}
           </div>
         </div>
+
+        {/* Column selection (securities) */}
+        {includeSections.securities && (
+          <div className="bg-dark-bg rounded-lg p-4 border border-border">
+            <p className="text-sm text-steel-blue mb-3">Select columns for Securities pages:</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'ticker', label: 'Ticker' },
+                { key: 'qty', label: 'Qty' },
+                { key: 'price', label: 'Price' },
+                { key: 'change', label: 'Change' },
+                { key: 'postValue', label: 'Post Value' },
+                { key: 'pctAcct', label: '% Acct' },
+              ].map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={includeColumns[key]}
+                    onChange={() => toggleColumn(key)}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included.</p>
+          </div>
+        )}
 
         {/* Download button */}
         <div className="bg-dark-bg rounded-lg p-4 border border-border">
