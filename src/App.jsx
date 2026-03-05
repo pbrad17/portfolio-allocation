@@ -37,7 +37,7 @@ function ThemeToggle() {
 }
 
 function AppContent() {
-  const { activeTab, setActiveTab, assumptions } = useAppContext();
+  const { activeTab, setActiveTab, assumptions, priceDate, priceLoading, refreshPrices } = useAppContext();
 
   return (
     <div className="min-h-screen bg-title-bg text-text-primary">
@@ -77,8 +77,18 @@ function AppContent() {
       </div>
 
       {/* Price notice */}
-      <div className="bg-alt-bg/50 border-b border-border-light px-6 py-2 text-xs text-steel-blue">
-        Prices as of March 4, 2026 — update prices as needed before generating report.
+      <div className="bg-alt-bg/50 border-b border-border-light px-6 py-2 text-xs text-steel-blue flex items-center gap-3">
+        <span>
+          {priceLoading ? 'Updating prices...' : `Prices as of ${priceDate}`}
+          {' '} — update prices as needed before generating report.
+        </span>
+        <button
+          onClick={refreshPrices}
+          disabled={priceLoading}
+          className="px-2 py-0.5 rounded border border-steel-blue/40 hover:bg-steel-blue/10 transition-colors disabled:opacity-50"
+        >
+          {priceLoading ? 'Refreshing...' : 'Refresh Prices'}
+        </button>
       </div>
 
       {/* Content */}

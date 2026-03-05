@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { TICKER_DB, TICKER_SYMBOLS } from './data/tickerDb';
 
 const AppContext = createContext();
 
@@ -35,6 +36,9 @@ export function AppProvider({ children }) {
   const [activeTab, setActiveTab] = useState('assumptions');
   const [showZeroRows, setShowZeroRows] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('bp-theme') || 'light');
+  const [priceDate, setPriceDate] = useState('March 4, 2026');
+  const [priceLoading, setPriceLoading] = useState(false);
+  const hasFetchedPrices = useRef(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -111,6 +115,52 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  const refreshPrices = useCallback(async () => {
+    setPriceLoading(true);
+    try {
+      const resp = await fetch(`/api/quotes?symbols=${TICKER_SYMBOLS.join(',')}`);
+      if (!resp.ok) throw new Error('API request failed');
+      const priceMap = await resp.json();
+
+      // Update TICKER_DB in memory
+      let latestDate = null;
+      for (const [symbol, data] of Object.entries(priceMap)) {
+        if (TICKER_DB[symbol]) {
+          TICKER_DB[symbol].price = data.price;
+        }
+        if (data.date && (!latestDate || data.date > latestDate)) {
+          latestDate = data.date;
+        }
+      }
+
+      // Update prices in existing holdings
+      setAccounts(prev => prev.map(acct => ({
+        ...acct,
+        holdings: acct.holdings.map(h => {
+          const updated = priceMap[h.ticker];
+          return updated ? { ...h, price: updated.price } : h;
+        }),
+      })));
+
+      if (latestDate) {
+        const d = new Date(latestDate + 'T00:00:00');
+        setPriceDate(d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+      }
+    } catch {
+      // Fallback: keep static prices
+    } finally {
+      setPriceLoading(false);
+    }
+  }, []);
+
+  // Auto-refresh on first mount
+  useEffect(() => {
+    if (!hasFetchedPrices.current) {
+      hasFetchedPrices.current = true;
+      refreshPrices();
+    }
+  }, [refreshPrices]);
+
   const value = {
     assumptions, setAssumptions,
     accounts, setAccounts,
@@ -120,6 +170,7 @@ export function AppProvider({ children }) {
     addAccount, removeAccount, renameAccount,
     updateHolding, addHolding, removeHolding,
     loadSession,
+    priceDate, priceLoading, refreshPrices,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

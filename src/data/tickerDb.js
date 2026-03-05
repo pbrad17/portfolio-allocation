@@ -1,3 +1,5 @@
+export const TICKER_SYMBOLS = [];
+
 export const TICKER_DB = {
   "AAPL": { name: "Apple Inc.", style: "Domestic Large Growth", price: 262.52 },
   "ABBV": { name: "AbbVie Inc.", style: "Domestic Large Value", price: 236.19 },
@@ -205,3 +207,6 @@ export const TICKER_DB = {
   "XLY":  { name: "Consumer Discretionary Select Sector SPDR Fund", style: "Domestic Large Growth", price: 116.39 },
   "XOM":  { name: "Exxon Mobil Corp.", style: "Domestic Large Value", price: 149.82 },
 };
+
+// Populate after TICKER_DB is defined
+TICKER_SYMBOLS.push(...Object.keys(TICKER_DB));
