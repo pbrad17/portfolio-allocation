@@ -1,6 +1,7 @@
 export const TICKER_SYMBOLS = [];
 
 export const TICKER_DB = {
+  "$$$$": { name: "Cash", style: "Cash", price: 1.00 },
   "AAPL": { name: "Apple Inc.", style: "Domestic Large Growth", price: 262.52 },
   "ABBV": { name: "AbbVie Inc.", style: "Domestic Large Value", price: 236.19 },
   "ADBE": { name: "Adobe Inc.", style: "Domestic Large Growth", price: 273.12 },

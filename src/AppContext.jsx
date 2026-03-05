@@ -118,7 +118,8 @@ export function AppProvider({ children }) {
   const refreshPrices = useCallback(async () => {
     setPriceLoading(true);
     try {
-      const resp = await fetch(`/api/quotes?symbols=${TICKER_SYMBOLS.join(',')}`);
+      const fetchable = TICKER_SYMBOLS.filter(s => !/^\$+$/.test(s));
+      const resp = await fetch(`/api/quotes?symbols=${fetchable.join(',')}`);
       if (!resp.ok) throw new Error('API request failed');
       const priceMap = await resp.json();
 
