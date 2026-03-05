@@ -387,24 +387,29 @@ export default function PdfPanel() {
         </div>
 
         {/* Section order */}
+        {(() => {
+          const visibleOrder = sectionOrder.filter(key => includeSections[key]);
+          if (visibleOrder.length < 2) return null;
+          return (
         <div className="bg-dark-bg rounded-lg p-4 border border-border">
           <p className="text-sm text-steel-blue mb-3">Reorder sections in the PDF:</p>
           <div className="space-y-1">
-            {sectionOrder.map((key, idx) => {
+            {visibleOrder.map((key, visIdx) => {
               const labels = { summary: 'Summary', capitalization: 'Capitalization', securities: 'Securities' };
+              const fullIdx = sectionOrder.indexOf(key);
               return (
                 <div key={key} className="flex items-center gap-2 py-1.5 px-3 bg-alt-bg rounded border border-border">
                   <span className="text-sm flex-1">{labels[key]}</span>
                   <button
-                    onClick={() => moveSection(idx, -1)}
-                    disabled={idx === 0}
+                    onClick={() => moveSection(fullIdx, -1)}
+                    disabled={visIdx === 0}
                     className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
                   >
                     ▲
                   </button>
                   <button
-                    onClick={() => moveSection(idx, 1)}
-                    disabled={idx === sectionOrder.length - 1}
+                    onClick={() => moveSection(fullIdx, 1)}
+                    disabled={visIdx === visibleOrder.length - 1}
                     className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
                   >
                     ▼
@@ -414,6 +419,8 @@ export default function PdfPanel() {
             })}
           </div>
         </div>
+          );
+        })()}
 
         {/* Column selection (securities) */}
         {includeSections.securities && (
