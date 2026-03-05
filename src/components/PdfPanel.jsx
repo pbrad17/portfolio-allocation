@@ -65,8 +65,8 @@ const ALL_HOLD_COLS = [
 
 function getVisibleCols(includeColumns) {
   const visible = ALL_HOLD_COLS.filter(c => !c.toggleable || includeColumns[c.key]);
-  const evenWidth = `${(100 / visible.length).toFixed(1)}%`;
-  return visible.map(c => ({ ...c, width: evenWidth }));
+  const totalW = visible.reduce((s, c) => s + c.width, 0);
+  return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
 function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns }) {
