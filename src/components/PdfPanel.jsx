@@ -51,6 +51,21 @@ const stylesCache = {
   light: makeStyles(PALETTES.light),
 };
 
+const ALL_SUM_COLS = [
+  { key: 'category', label: 'Category', width: 22, align: 'left', toggleable: false },
+  { key: 'portfolioDollar', label: 'Portfolio $', width: 16, align: 'right', toggleable: true },
+  { key: 'portfolioPct', label: 'Portfolio %', width: 14, align: 'right', toggleable: true },
+  { key: 'targetPct', label: 'Target %', width: 14, align: 'right', toggleable: true },
+  { key: 'reallocation', label: 'Reallocation $', width: 18, align: 'right', toggleable: true },
+  { key: 'difference', label: 'Difference %', width: 16, align: 'right', toggleable: true },
+];
+
+function getVisibleSumCols(includeSummaryColumns) {
+  const visible = ALL_SUM_COLS.filter(c => !c.toggleable || includeSummaryColumns[c.key]);
+  const totalW = visible.reduce((s, c) => s + c.width, 0);
+  return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
+}
+
 const ALL_HOLD_COLS = [
   { key: 'ticker', label: 'Ticker', width: 8, align: 'left', toggleable: true },
   { key: 'security', label: 'Security', width: 18, align: 'left', toggleable: false },
@@ -69,7 +84,7 @@ function getVisibleCols(includeColumns) {
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, sectionOrder }) {
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, sectionOrder }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -80,14 +95,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     difference: summaryRows.reduce((s, r) => s + r.portfolioPct, 0) - summaryRows.reduce((s, r) => s + r.targetPct, 0),
   };
 
-  const sumCols = [
-    { label: 'Category', width: '22%', align: 'left' },
-    { label: 'Portfolio $', width: '16%', align: 'right' },
-    { label: 'Portfolio %', width: '14%', align: 'right' },
-    { label: 'Target %', width: '14%', align: 'right' },
-    { label: 'Reallocation $', width: '18%', align: 'right' },
-    { label: 'Difference %', width: '16%', align: 'right' },
-  ];
+  const sumCols = getVisibleSumCols(includeSummaryColumns);
 
   const capCols = [
     { label: 'Style', width: '20%', align: 'left' },
@@ -105,20 +113,21 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     return c.white;
   }
 
+  const sumValGetters = {
+    category: (row) => row.category,
+    portfolioDollar: (row) => formatCurrency(row.portfolioDollar),
+    portfolioPct: (row) => formatPercent(row.portfolioPct),
+    targetPct: (row) => formatPercent(row.targetPct),
+    reallocation: (row) => formatCurrency(row.reallocation),
+    difference: (row) => formatPercent(row.difference),
+  };
+
   function renderSumRow(row, idx) {
-    const vals = [
-      row.category,
-      formatCurrency(row.portfolioDollar),
-      formatPercent(row.portfolioPct),
-      formatPercent(row.targetPct),
-      formatCurrency(row.reallocation),
-      formatPercent(row.difference),
-    ];
     return (
       <View key={row.category} style={[s.row, idx % 2 === 0 ? s.rowEven : s.rowAlt]}>
-        {sumCols.map((col, ci) => (
-          <Text key={ci} style={[s.cell, { width: col.width, textAlign: col.align }, ci === 5 ? { color: diffColor(row.difference) } : {}]}>
-            {vals[ci]}
+        {sumCols.map(col => (
+          <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, col.key === 'difference' ? { color: diffColor(row.difference) } : {}]}>
+            {sumValGetters[col.key](row)}
           </Text>
         ))}
       </View>
@@ -126,12 +135,11 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   }
 
   function renderTotalRow(label, data) {
-    const vals = [label, formatCurrency(data.portfolioDollar), formatPercent(data.portfolioPct), formatPercent(data.targetPct), formatCurrency(data.reallocation), formatPercent(data.difference)];
     return (
       <View style={s.totalRow}>
-        {sumCols.map((col, ci) => (
-          <Text key={ci} style={[ci === 0 ? s.cellAccent : s.cell, { width: col.width, textAlign: col.align }, ci === 5 ? { color: diffColor(data.difference) } : {}]}>
-            {vals[ci]}
+        {sumCols.map(col => (
+          <Text key={col.key} style={[col.key === 'category' ? s.cellAccent : s.cell, { width: col.width, textAlign: col.align }, col.key === 'difference' ? { color: diffColor(data.difference) } : {}]}>
+            {col.key === 'category' ? label : sumValGetters[col.key](data)}
           </Text>
         ))}
       </View>
@@ -277,6 +285,13 @@ export default function PdfPanel() {
     postValue: true,
     pctAcct: true,
   });
+  const [includeSummaryColumns, setIncludeSummaryColumns] = useState({
+    portfolioDollar: true,
+    portfolioPct: true,
+    targetPct: true,
+    reallocation: true,
+    difference: true,
+  });
   const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities']);
 
   const toggleSection = (key) => {
@@ -284,6 +299,9 @@ export default function PdfPanel() {
   };
   const toggleColumn = (key) => {
     setIncludeColumns(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  const toggleSummaryColumn = (key) => {
+    setIncludeSummaryColumns(prev => ({ ...prev, [key]: !prev[key] }));
   };
   const moveSection = (index, direction) => {
     setSectionOrder(prev => {
@@ -339,6 +357,7 @@ export default function PdfPanel() {
           theme={theme}
           includeSections={includeSections}
           includeColumns={includeColumns}
+          includeSummaryColumns={includeSummaryColumns}
           sectionOrder={sectionOrder}
         />
       ).toBlob();
@@ -360,7 +379,7 @@ export default function PdfPanel() {
     <div>
       <h2 className="text-xl font-bold text-accent mb-4">Generate PDF Report</h2>
 
-      <div className="space-y-4 max-w-lg">
+      <div className="space-y-4 max-w-2xl">
         {/* Section selection */}
         <div className="bg-dark-bg rounded-lg p-4 border border-border">
           <p className="text-sm text-steel-blue mb-3">Select sections to include in the report:</p>
@@ -422,31 +441,60 @@ export default function PdfPanel() {
           );
         })()}
 
-        {/* Column selection (securities) */}
-        {includeSections.securities && (
-          <div className="bg-dark-bg rounded-lg p-4 border border-border">
-            <p className="text-sm text-steel-blue mb-3">Select columns for Securities pages:</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: 'ticker', label: 'Ticker' },
-                { key: 'qty', label: 'Qty' },
-                { key: 'price', label: 'Price' },
-                { key: 'change', label: 'Change' },
-                { key: 'postValue', label: 'Post Value' },
-                { key: 'pctAcct', label: '% Acct' },
-              ].map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={includeColumns[key]}
-                    onChange={() => toggleColumn(key)}
-                    className="accent-accent"
-                  />
-                  <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included.</p>
+        {/* Column selection boxes */}
+        {(includeSections.summary || includeSections.securities) && (
+          <div className="flex gap-4 flex-wrap">
+            {includeSections.summary && (
+              <div className="bg-dark-bg rounded-lg p-4 border border-border flex-1 min-w-[250px]">
+                <p className="text-sm text-steel-blue mb-3">Select columns for Summary page:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'portfolioDollar', label: 'Portfolio $' },
+                    { key: 'portfolioPct', label: 'Portfolio %' },
+                    { key: 'targetPct', label: 'Target %' },
+                    { key: 'reallocation', label: 'Reallocation $' },
+                    { key: 'difference', label: 'Difference %' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={includeSummaryColumns[key]}
+                        onChange={() => toggleSummaryColumn(key)}
+                        className="accent-accent"
+                      />
+                      <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-text-primary/40 mt-2">Category is always included.</p>
+              </div>
+            )}
+            {includeSections.securities && (
+              <div className="bg-dark-bg rounded-lg p-4 border border-border flex-1 min-w-[250px]">
+                <p className="text-sm text-steel-blue mb-3">Select columns for Securities pages:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'ticker', label: 'Ticker' },
+                    { key: 'qty', label: 'Qty' },
+                    { key: 'price', label: 'Price' },
+                    { key: 'change', label: 'Change' },
+                    { key: 'postValue', label: 'Post Value' },
+                    { key: 'pctAcct', label: '% Acct' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={includeColumns[key]}
+                        onChange={() => toggleColumn(key)}
+                        className="accent-accent"
+                      />
+                      <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included.</p>
+              </div>
+            )}
           </div>
         )}
 
