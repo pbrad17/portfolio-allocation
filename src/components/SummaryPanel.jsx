@@ -88,8 +88,8 @@ export default function SummaryPanel() {
           <table className="w-full">
             <thead>
               <tr className="bg-header-bg">
-                {['Category', 'Portfolio $', 'Portfolio %', 'Target %', 'Reallocation $', 'Difference %'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left text-xs font-medium text-text-primary/90">{h}</th>
+                {['Category', 'Portfolio $', 'Portfolio %', 'Target %', 'Reallocation $', 'Difference %'].map((h, i) => (
+                  <th key={h} className={`px-3 py-2 text-xs font-medium text-text-primary/90 ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
