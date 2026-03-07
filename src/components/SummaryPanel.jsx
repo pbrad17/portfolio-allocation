@@ -93,7 +93,6 @@ export default function SummaryPanel() {
                 ))}
               </tr>
             </thead>
-            <tbody>
               {sections.map(section => {
                 const sectionRows = displayRows.filter(r => section.categories.includes(r.category));
                 if (!showZeroRows && sectionRows.length === 0) return null;
@@ -112,7 +111,6 @@ export default function SummaryPanel() {
                   </tbody>
                 );
               })}
-            </tbody>
             <tfoot>
               <TotalRow label="Grand Total" data={grandTotal} />
             </tfoot>
