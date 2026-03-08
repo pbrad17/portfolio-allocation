@@ -84,7 +84,24 @@ function getVisibleCols(includeColumns) {
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, sectionOrder }) {
+const ALL_CAP_COLS = [
+  { key: 'style', label: 'Style', width: 18, align: 'left', toggleable: false },
+  { key: 'currentDollar', label: 'Current $', width: 13, align: 'right', toggleable: true },
+  { key: 'currentPct', label: 'Current %', width: 10, align: 'right', toggleable: true },
+  { key: 'changeDollar', label: 'Change $', width: 12, align: 'right', toggleable: true },
+  { key: 'postDollar', label: 'Post $', width: 13, align: 'right', toggleable: true },
+  { key: 'postPct', label: 'Post %', width: 10, align: 'right', toggleable: true },
+  { key: 'targetPct', label: 'Target %', width: 10, align: 'right', toggleable: true },
+  { key: 'difference', label: 'Diff %', width: 14, align: 'right', toggleable: true },
+];
+
+function getVisibleCapCols(includeCapColumns) {
+  const visible = ALL_CAP_COLS.filter(c => !c.toggleable || includeCapColumns[c.key]);
+  const totalW = visible.reduce((s, c) => s + c.width, 0);
+  return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
+}
+
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, sectionOrder }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -97,16 +114,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   const sumCols = getVisibleSumCols(includeSummaryColumns);
 
-  const capCols = [
-    { label: 'Style', width: '18%', align: 'left' },
-    { label: 'Current $', width: '13%', align: 'right' },
-    { label: 'Current %', width: '10%', align: 'right' },
-    { label: 'Change $', width: '12%', align: 'right' },
-    { label: 'Post $', width: '13%', align: 'right' },
-    { label: 'Post %', width: '10%', align: 'right' },
-    { label: 'Target %', width: '10%', align: 'right' },
-    { label: 'Diff %', width: '14%', align: 'right' },
-  ];
+  const capCols = getVisibleCapCols(includeCapColumns);
 
   const CAP_GROUPS = [
     { label: 'Large', indices: [0, 1] },
@@ -175,21 +183,37 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       );
     }
 
-    function capRowValues(r) {
-      return [r.style, formatCurrency(r.currentDollar), formatPercent(r.currentPct), formatCurrency(r.changeDollar), formatCurrency(r.postDollar), formatPercent(r.postPct), formatPercent(r.targetPct), formatPercent(r.difference)];
+    const capValGetters = {
+      style: (r) => r.style,
+      currentDollar: (r) => formatCurrency(r.currentDollar),
+      currentPct: (r) => formatPercent(r.currentPct),
+      changeDollar: (r) => formatCurrency(r.changeDollar),
+      postDollar: (r) => formatCurrency(r.postDollar),
+      postPct: (r) => formatPercent(r.postPct),
+      targetPct: (r) => formatPercent(r.targetPct),
+      difference: (r) => formatPercent(r.difference),
+    };
+
+    function renderCapRow(data, rowStyle) {
+      return capCols.map(col => (
+        <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, col.key === 'style' ? { color: rowStyle?.labelColor } : {}, col.key === 'difference' ? { color: diffColor(data.difference) } : {}, rowStyle?.bold ? { fontWeight: 'bold' } : {}]}>
+          {capValGetters[col.key](data)}
+        </Text>
+      ));
     }
 
     return (
       <View key={title}>
         <Text style={[s.sectionTitle, { fontSize: 9, padding: 3, marginTop: 4 }]}>{title}</Text>
         <View style={[s.tableHeader, compact]}>
-          {capCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
+          {capCols.map(col => <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
         </View>
         {CAP_GROUPS.map(group => {
           const groupRows = group.indices.map(i => allRows[i]).filter(r => r && (r.currentDollar || r.postDollar || r.targetPct));
           if (groupRows.length === 0) return null;
           const subtotal = sumCapGroup(group.indices);
           const subtotalDiff = subtotal.postPct - subtotal.targetPct;
+          const subtotalData = { ...subtotal, style: `${group.label} Total`, difference: subtotalDiff };
           return (
             <View key={group.label}>
               {/* Group header */}
@@ -199,24 +223,21 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
               {/* Data rows */}
               {groupRows.map((r, i) => (
                 <View key={r.style} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt, compact]}>
-                  {capRowValues(r).map((v, ci) => (
-                    <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }, ci === 7 ? { color: diffColor(r.difference) } : {}]}>{v}</Text>
-                  ))}
+                  {renderCapRow(r, {})}
                 </View>
               ))}
               {/* Subtotal row */}
               <View style={[s.row, { borderTopWidth: 0.5, borderTopColor: c.border, backgroundColor: c.darkBg }, compact]}>
-                {[`${group.label} Total`, formatCurrency(subtotal.currentDollar), formatPercent(subtotal.currentPct), formatCurrency(subtotal.changeDollar), formatCurrency(subtotal.postDollar), formatPercent(subtotal.postPct), formatPercent(subtotal.targetPct), formatPercent(subtotalDiff)].map((v, ci) => (
-                  <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align, fontWeight: 'bold' }, ci === 7 ? { color: diffColor(subtotalDiff) } : ci === 0 ? { color: c.steelBlue } : {}]}>{v}</Text>
-                ))}
+                {renderCapRow(subtotalData, { bold: true, labelColor: c.steelBlue })}
               </View>
             </View>
           );
         })}
         <View style={[s.totalRow, compact]}>
-          {['Total', formatCurrency(section.currentTotal), formatPercent(section.currentTotalPct), formatCurrency(section.changeTotal), formatCurrency(section.postTotal), formatPercent(section.postTotalPct), formatPercent(section.targetTotalPct), formatPercent(section.postTotalPct - section.targetTotalPct)].map((v, ci) => (
-            <Text key={ci} style={[ci === 0 ? s.cellAccent : s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }]}>{v}</Text>
-          ))}
+          {renderCapRow(
+            { style: 'Total', currentDollar: section.currentTotal, currentPct: section.currentTotalPct, changeDollar: section.changeTotal, postDollar: section.postTotal, postPct: section.postTotalPct, targetPct: section.targetTotalPct, difference: section.postTotalPct - section.targetTotalPct },
+            { bold: true, labelColor: c.accent }
+          )}
         </View>
       </View>
     );
@@ -345,6 +366,15 @@ export default function PdfPanel() {
     reallocation: true,
     difference: true,
   });
+  const [includeCapColumns, setIncludeCapColumns] = useState({
+    currentDollar: true,
+    currentPct: true,
+    changeDollar: true,
+    postDollar: true,
+    postPct: true,
+    targetPct: true,
+    difference: true,
+  });
   const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities']);
 
   const toggleSection = (key) => {
@@ -355,6 +385,9 @@ export default function PdfPanel() {
   };
   const toggleSummaryColumn = (key) => {
     setIncludeSummaryColumns(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  const toggleCapColumn = (key) => {
+    setIncludeCapColumns(prev => ({ ...prev, [key]: !prev[key] }));
   };
   const moveSection = (index, direction) => {
     setSectionOrder(prev => {
@@ -411,6 +444,7 @@ export default function PdfPanel() {
           includeSections={includeSections}
           includeColumns={includeColumns}
           includeSummaryColumns={includeSummaryColumns}
+          includeCapColumns={includeCapColumns}
           sectionOrder={sectionOrder}
         />
       ).toBlob();
@@ -432,7 +466,7 @@ export default function PdfPanel() {
     <div>
       <h2 className="text-xl font-bold text-accent mb-4">Generate PDF Report</h2>
 
-      <div className="space-y-4 max-w-2xl">
+      <div className="space-y-4 max-w-4xl">
         {/* Section selection */}
         <div className="bg-dark-bg rounded-lg p-4 border border-border">
           <p className="text-sm text-steel-blue mb-3">Select sections to include in the report:</p>
@@ -495,7 +529,7 @@ export default function PdfPanel() {
         })()}
 
         {/* Column selection boxes */}
-        {(includeSections.summary || includeSections.securities) && (
+        {(includeSections.summary || includeSections.capitalization || includeSections.securities) && (
           <div className="flex gap-4 flex-wrap">
             {includeSections.summary && (
               <div className="bg-dark-bg rounded-lg p-4 border border-border flex-1 min-w-[250px]">
@@ -546,6 +580,33 @@ export default function PdfPanel() {
                   ))}
                 </div>
                 <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included.</p>
+              </div>
+            )}
+            {includeSections.capitalization && (
+              <div className="bg-dark-bg rounded-lg p-4 border border-border flex-1 min-w-[250px]">
+                <p className="text-sm text-steel-blue mb-3">Select columns for Capitalization page:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'currentDollar', label: 'Current $' },
+                    { key: 'currentPct', label: 'Current %' },
+                    { key: 'changeDollar', label: 'Change $' },
+                    { key: 'postDollar', label: 'Post $' },
+                    { key: 'postPct', label: 'Post %' },
+                    { key: 'targetPct', label: 'Target %' },
+                    { key: 'difference', label: 'Diff %' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={includeCapColumns[key]}
+                        onChange={() => toggleCapColumn(key)}
+                        className="accent-accent"
+                      />
+                      <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-text-primary/40 mt-2">Style is always included.</p>
               </div>
             )}
           </div>
