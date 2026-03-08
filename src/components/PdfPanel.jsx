@@ -101,7 +101,7 @@ function getVisibleCapCols(includeCapColumns) {
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, sectionOrder }) {
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, showZeroRows, sectionOrder }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -209,7 +209,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
           {capCols.map(col => <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
         </View>
         {CAP_GROUPS.map(group => {
-          const groupRows = group.indices.map(i => allRows[i]).filter(r => r && (r.currentDollar || r.postDollar || r.targetPct));
+          const groupRows = group.indices.map(i => allRows[i]).filter(r => r && (showZeroRows ? true : (r.currentDollar !== 0 || r.postDollar !== 0)));
           if (groupRows.length === 0) return null;
           const subtotal = sumCapGroup(group.indices);
           const subtotalDiff = subtotal.postPct - subtotal.targetPct;
@@ -343,7 +343,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 }
 
 export default function PdfPanel() {
-  const { accounts, assumptions, theme } = useAppContext();
+  const { accounts, assumptions, theme, showZeroRows } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [generating, setGenerating] = useState(false);
   const [includeSections, setIncludeSections] = useState({
@@ -445,6 +445,7 @@ export default function PdfPanel() {
           includeColumns={includeColumns}
           includeSummaryColumns={includeSummaryColumns}
           includeCapColumns={includeCapColumns}
+          showZeroRows={showZeroRows}
           sectionOrder={sectionOrder}
         />
       ).toBlob();
