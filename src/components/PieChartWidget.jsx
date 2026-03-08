@@ -5,7 +5,7 @@ import { getSummaryData } from '../utils/calculations';
 import { PIE_COLORS } from '../data/colors';
 
 const WIDTH = 540;
-const HEIGHT = 420;
+const HEIGHT = 460;
 const CX = 270;
 const CY = 200;
 const RX = 150;  // horizontal radius (ellipse)
@@ -152,36 +152,68 @@ function Pie3DChart({ data, theme }) {
       {/* Top face highlight */}
       <ellipse cx={CX} cy={CY} rx={RX * 0.3} ry={RY * 0.3} fill="white" opacity={0.05} />
 
-      {/* Labels */}
-      {slices.map((slice) => {
-        if (slice.value / total < 0.02) return null;
+      {/* Labels with collision resolution */}
+      {(() => {
+        const MIN_GAP = 22;
         const labelRadius = RX + 50;
         const labelRY = RY + 35;
-        const mx = CX + labelRadius * Math.cos(slice.midAngle);
-        const my = CY + labelRY * Math.sin(slice.midAngle);
 
-        // Line from edge of pie to label
-        const edgeX = CX + RX * Math.cos(slice.midAngle);
-        const edgeY = CY + RY * Math.sin(slice.midAngle);
-        const elbowX = CX + (RX + 20) * Math.cos(slice.midAngle);
-        const elbowY = CY + (RY + 14) * Math.sin(slice.midAngle);
+        // Build label position array
+        const labels = slices
+          .filter(slice => slice.value / total >= 0.02)
+          .map(slice => {
+            const x = CX + labelRadius * Math.cos(slice.midAngle);
+            const y = CY + labelRY * Math.sin(slice.midAngle);
+            const edgeX = CX + RX * Math.cos(slice.midAngle);
+            const edgeY = CY + RY * Math.sin(slice.midAngle);
+            const elbowX = CX + (RX + 20) * Math.cos(slice.midAngle);
+            const elbowY = CY + (RY + 14) * Math.sin(slice.midAngle);
+            return { slice, x, y, origY: y, edgeX, edgeY, elbowX, elbowY, anchor: x > CX ? 'start' : 'end' };
+          });
 
-        const anchor = mx > CX ? 'start' : 'end';
-        const pct = (slice.value * 100).toFixed(1);
+        // Resolve collisions per side
+        function resolveCollisions(group) {
+          if (group.length < 2) return group;
+          group.sort((a, b) => a.y - b.y);
+          // Forward pass: push down
+          for (let i = 1; i < group.length; i++) {
+            if (group[i].y - group[i - 1].y < MIN_GAP) {
+              group[i].y = group[i - 1].y + MIN_GAP;
+            }
+          }
+          // Backward pass: clamp to bottom, push up
+          const maxY = HEIGHT - 10;
+          for (let i = group.length - 1; i >= 0; i--) {
+            if (group[i].y > maxY) group[i].y = maxY;
+            if (i < group.length - 1 && group[i + 1].y - group[i].y < MIN_GAP) {
+              group[i].y = group[i + 1].y - MIN_GAP;
+            }
+          }
+          return group;
+        }
 
-        return (
-          <g key={`label-${slice.index}`}>
-            <line x1={edgeX} y1={edgeY} x2={elbowX} y2={elbowY} stroke={textColor} strokeWidth={0.8} opacity={0.4} />
-            <line x1={elbowX} y1={elbowY} x2={mx} y2={my} stroke={textColor} strokeWidth={0.8} opacity={0.4} />
-            <text x={mx} y={my - 2} fill={textColor} textAnchor={anchor} fontSize={10} fontWeight="600">
-              {slice.name}
-            </text>
-            <text x={mx} y={my + 11} fill={textColor} textAnchor={anchor} fontSize={9} opacity={0.65}>
-              {pct}%
-            </text>
-          </g>
-        );
-      })}
+        const leftLabels = resolveCollisions(labels.filter(l => l.x <= CX));
+        const rightLabels = resolveCollisions(labels.filter(l => l.x > CX));
+        const resolved = [...leftLabels, ...rightLabels];
+
+        return resolved.map(l => {
+          const pct = (l.slice.value * 100).toFixed(1);
+          return (
+            <g key={`label-${l.slice.index}`}>
+              <polyline
+                points={`${l.edgeX},${l.edgeY} ${l.elbowX},${l.elbowY} ${l.x},${l.y}`}
+                stroke={textColor} strokeWidth={0.8} opacity={0.4} fill="none"
+              />
+              <text x={l.x} y={l.y - 2} fill={textColor} textAnchor={l.anchor} fontSize={10} fontWeight="600">
+                {l.slice.name}
+              </text>
+              <text x={l.x} y={l.y + 11} fill={textColor} textAnchor={l.anchor} fontSize={9} opacity={0.65}>
+                {pct}%
+              </text>
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 }

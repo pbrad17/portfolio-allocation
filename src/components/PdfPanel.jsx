@@ -42,7 +42,7 @@ function makeStyles(c) {
     totalRow: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 4, borderTopWidth: 1.5, borderTopColor: c.accent, backgroundColor: c.darkBg },
     cell: { fontSize: 7, color: c.text },
     cellAccent: { fontSize: 7, color: c.accent, fontWeight: 'bold' },
-    chartImg: { width: 400, height: 350, alignSelf: 'center', marginVertical: 10 },
+    chartImg: { width: 400, height: 383, alignSelf: 'center', marginVertical: 10 },
   });
 }
 
@@ -155,6 +155,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   function renderCapSection(title, section) {
     const allRows = section.rows;
+    const compact = { paddingVertical: 2, paddingHorizontal: 4 };
 
     function sumCapGroup(indices) {
       return indices.reduce(
@@ -180,8 +181,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
     return (
       <View key={title}>
-        <Text style={s.sectionTitle}>{title}</Text>
-        <View style={s.tableHeader}>
+        <Text style={[s.sectionTitle, { fontSize: 9, padding: 3, marginTop: 4 }]}>{title}</Text>
+        <View style={[s.tableHeader, compact]}>
           {capCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
         </View>
         {CAP_GROUPS.map(group => {
@@ -192,19 +193,19 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
           return (
             <View key={group.label}>
               {/* Group header */}
-              <View style={[s.row, { backgroundColor: c.sectionBg }]}>
+              <View style={[s.row, { backgroundColor: c.sectionBg }, compact]}>
                 <Text style={[s.cell, { fontWeight: 'bold', color: c.steelBlue }]}>{group.label}</Text>
               </View>
               {/* Data rows */}
               {groupRows.map((r, i) => (
-                <View key={r.style} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+                <View key={r.style} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt, compact]}>
                   {capRowValues(r).map((v, ci) => (
                     <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }, ci === 7 ? { color: diffColor(r.difference) } : {}]}>{v}</Text>
                   ))}
                 </View>
               ))}
               {/* Subtotal row */}
-              <View style={[s.row, { borderTopWidth: 0.5, borderTopColor: c.border, backgroundColor: c.darkBg }]}>
+              <View style={[s.row, { borderTopWidth: 0.5, borderTopColor: c.border, backgroundColor: c.darkBg }, compact]}>
                 {[`${group.label} Total`, formatCurrency(subtotal.currentDollar), formatPercent(subtotal.currentPct), formatCurrency(subtotal.changeDollar), formatCurrency(subtotal.postDollar), formatPercent(subtotal.postPct), formatPercent(subtotal.targetPct), formatPercent(subtotalDiff)].map((v, ci) => (
                   <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align, fontWeight: 'bold' }, ci === 7 ? { color: diffColor(subtotalDiff) } : ci === 0 ? { color: c.steelBlue } : {}]}>{v}</Text>
                 ))}
@@ -212,7 +213,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
             </View>
           );
         })}
-        <View style={s.totalRow}>
+        <View style={[s.totalRow, compact]}>
           {['Total', formatCurrency(section.currentTotal), formatPercent(section.currentTotalPct), formatCurrency(section.changeTotal), formatCurrency(section.postTotal), formatPercent(section.postTotalPct), formatPercent(section.targetTotalPct), formatPercent(section.postTotalPct - section.targetTotalPct)].map((v, ci) => (
             <Text key={ci} style={[ci === 0 ? s.cellAccent : s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }]}>{v}</Text>
           ))}
@@ -255,9 +256,9 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   function renderCapitalizationPage() {
     return (
-      <Page size="LETTER" style={s.page} key="capitalization">
-        <View style={s.header}>
-          <Text style={s.title}>Equity Capitalization Breakdown</Text>
+      <Page size="LETTER" style={[s.page, { padding: 25 }]} key="capitalization">
+        <View style={[s.header, { padding: 8, marginBottom: 10 }]}>
+          <Text style={[s.title, { fontSize: 14 }]}>Equity Capitalization Breakdown</Text>
           <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
         </View>
         {renderCapSection('Domestic Equity', capData.domestic)}
