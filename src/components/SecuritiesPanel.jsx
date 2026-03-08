@@ -94,8 +94,14 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
           {notFound && <span className="absolute -top-1 -right-1 text-negative text-xs">*</span>}
         </div>
       </td>
-      <td className="px-2 py-1 text-sm text-text-primary/80 max-w-48 truncate">
-        {holding.securityName || <span className="text-text-primary/30">—</span>}
+      <td className="px-2 py-1">
+        <input
+          type="text"
+          value={holding.securityName || ''}
+          onChange={e => updateHolding(accountId, holding.id, 'securityName', e.target.value)}
+          className="w-full bg-transparent border border-transparent text-text-primary/80 px-2 py-1 rounded text-sm hover:border-border focus:border-accent focus:bg-input-teal/20 focus:outline-none"
+          placeholder="Security name"
+        />
       </td>
       <td className="px-2 py-1">
         <select
