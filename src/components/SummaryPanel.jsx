@@ -58,7 +58,7 @@ export default function SummaryPanel() {
     portfolioDollar: total,
     portfolioPct: rows.reduce((s, r) => s + r.portfolioPct, 0),
     targetPct: rows.reduce((s, r) => s + r.targetPct, 0),
-    reallocation: 0,
+    reallocation: rows.reduce((s, r) => s + r.reallocation, 0),
     difference: rows.reduce((s, r) => s + r.portfolioPct, 0) - rows.reduce((s, r) => s + r.targetPct, 0),
   };
 

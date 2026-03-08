@@ -120,7 +120,7 @@ export default function AssumptionsPanel() {
             {/* Cards */}
             {csEntries.map(([ticker, cs]) => {
               const total = getAllocTotal(cs.allocations);
-              const totalPct = Math.round(total * 100);
+              const totalPct = Math.round(total * 1000) / 10;
               const isValid = totalPct === 100;
 
               return (
@@ -161,10 +161,10 @@ export default function AssumptionsPanel() {
                                   type="number"
                                   min="0"
                                   max="100"
-                                  step="1"
-                                  value={cs.allocations[cat] ? Math.round(cs.allocations[cat] * 100) : ''}
+                                  step="0.1"
+                                  value={cs.allocations[cat] ? Math.round(cs.allocations[cat] * 1000) / 10 : ''}
                                   onChange={e => handleAllocChange(ticker, cat, e.target.value)}
-                                  className="w-14 bg-input-teal/20 border border-border text-text-primary px-1.5 py-0.5 rounded text-xs text-right focus:outline-none focus:border-accent"
+                                  className="w-16 bg-input-teal/20 border border-border text-text-primary px-1.5 py-0.5 rounded text-xs text-right focus:outline-none focus:border-accent"
                                   placeholder="0"
                                 />
                                 <span className="text-xs text-text-primary/40 ml-0.5">%</span>

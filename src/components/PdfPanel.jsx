@@ -108,7 +108,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     portfolioDollar: summaryTotal,
     portfolioPct: summaryRows.reduce((s, r) => s + r.portfolioPct, 0),
     targetPct: summaryRows.reduce((s, r) => s + r.targetPct, 0),
-    reallocation: 0,
+    reallocation: summaryRows.reduce((s, r) => s + r.reallocation, 0),
     difference: summaryRows.reduce((s, r) => s + r.portfolioPct, 0) - summaryRows.reduce((s, r) => s + r.targetPct, 0),
   };
 
