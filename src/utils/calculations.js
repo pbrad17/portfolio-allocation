@@ -186,6 +186,34 @@ export function getCapitalizationData(accounts, targetProfile) {
   const domestic = calcSection(domesticAllStyles, domesticOutputStyles, domesticTarget);
   const foreign = calcSection(foreignAllStyles, foreignOutputStyles, foreignTarget);
 
+  // Recompute all percentages relative to total equity (not full portfolio)
+  const currentEquityTotal = domestic.currentTotal + foreign.currentTotal;
+  const postEquityTotal = domestic.postTotal + foreign.postTotal;
+  const equityTargetTotal = domesticTarget + foreignTarget;
+
+  function applyEquityPcts(section, sectionTarget) {
+    const capSplit = { Large: 0.5, Mid: 0.3, Small: 0.2 };
+    const styleSplit = { Value: 0.5, Growth: 0.5 };
+
+    for (const row of section.rows) {
+      const parts = row.fullStyle.split(' ');
+      const cap = parts[1];
+      const valStyle = parts[2];
+      row.currentPct = currentEquityTotal > 0 ? row.currentDollar / currentEquityTotal : 0;
+      row.postPct = postEquityTotal > 0 ? row.postDollar / postEquityTotal : 0;
+      row.targetPct = equityTargetTotal > 0
+        ? (sectionTarget / equityTargetTotal) * capSplit[cap] * styleSplit[valStyle]
+        : 0;
+      row.difference = row.postPct - row.targetPct;
+    }
+    section.currentTotalPct = currentEquityTotal > 0 ? section.currentTotal / currentEquityTotal : 0;
+    section.postTotalPct = postEquityTotal > 0 ? section.postTotal / postEquityTotal : 0;
+    section.targetTotalPct = equityTargetTotal > 0 ? sectionTarget / equityTargetTotal : 0;
+  }
+
+  applyEquityPcts(domestic, domesticTarget);
+  applyEquityPcts(foreign, foreignTarget);
+
   // Combined
   const combinedRows = domestic.rows.map((dRow, i) => {
     const fRow = foreign.rows[i];
@@ -213,7 +241,7 @@ export function getCapitalizationData(accounts, targetProfile) {
     changeTotal: domestic.changeTotal + foreign.changeTotal,
     currentTotalPct: domestic.currentTotalPct + foreign.currentTotalPct,
     postTotalPct: domestic.postTotalPct + foreign.postTotalPct,
-    targetTotalPct: domesticTarget + foreignTarget,
+    targetTotalPct: equityTargetTotal > 0 ? 1 : 0,
   };
 
   return { domestic, foreign, combined, portfolioTotal: total };
