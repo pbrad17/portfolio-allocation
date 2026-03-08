@@ -76,42 +76,66 @@ export function getSectionTotal(rows, categories) {
 export function getCapitalizationData(accounts, targetProfile) {
   const total = getPortfolioTotal(accounts);
 
-  const domesticStyles = [
-    'Domestic Large Value', 'Domestic Large Blend', 'Domestic Large Growth',
-    'Domestic Mid Value', 'Domestic Mid Blend', 'Domestic Mid Growth',
-    'Domestic Small Value', 'Domestic Small Blend', 'Domestic Small Growth',
-  ];
-  const foreignStyles = [
-    'Foreign Large Value', 'Foreign Large Blend', 'Foreign Large Growth',
-    'Foreign Mid Value', 'Foreign Mid Blend', 'Foreign Mid Growth',
-    'Foreign Small Value', 'Foreign Small Blend', 'Foreign Small Growth',
-  ];
+  const domesticPrefix = 'Domestic';
+  const foreignPrefix = 'Foreign';
+  const caps = ['Large', 'Mid', 'Small'];
+  const vgStyles = ['Value', 'Growth'];
 
-  function calcSection(styles, sectionTarget) {
+  // All styles including Blend (for aggregation)
+  const allStylesFor = (prefix) => caps.flatMap(cap =>
+    ['Value', 'Blend', 'Growth'].map(s => `${prefix} ${cap} ${s}`)
+  );
+  // Output styles (Value/Growth only, 6 rows)
+  const outputStylesFor = (prefix) => caps.flatMap(cap =>
+    vgStyles.map(s => `${prefix} ${cap} ${s}`)
+  );
+
+  const domesticAllStyles = allStylesFor(domesticPrefix);
+  const foreignAllStyles = allStylesFor(foreignPrefix);
+  const domesticOutputStyles = outputStylesFor(domesticPrefix);
+  const foreignOutputStyles = outputStylesFor(foreignPrefix);
+
+  function calcSection(allStyles, outputStyles, sectionTarget) {
     const currentByStyle = {};
     const postByStyle = {};
 
     for (const acct of accounts) {
       for (const h of acct.holdings) {
-        if (styles.includes(h.style)) {
+        if (allStyles.includes(h.style)) {
           currentByStyle[h.style] = (currentByStyle[h.style] || 0) + getMarketValue(h);
           postByStyle[h.style] = (postByStyle[h.style] || 0) + getPostValue(h);
         }
       }
     }
 
-    const currentTotal = Object.values(currentByStyle).reduce((s, v) => s + v, 0);
-    const postTotal = Object.values(postByStyle).reduce((s, v) => s + v, 0);
+    // Split Blend 50/50 into Value and Growth
+    const prefix = allStyles[0].split(' ')[0]; // Domestic or Foreign
+    for (const cap of caps) {
+      const blendKey = `${prefix} ${cap} Blend`;
+      const valueKey = `${prefix} ${cap} Value`;
+      const growthKey = `${prefix} ${cap} Growth`;
+      const blendCurrent = currentByStyle[blendKey] || 0;
+      const blendPost = postByStyle[blendKey] || 0;
+      if (blendCurrent || blendPost) {
+        currentByStyle[valueKey] = (currentByStyle[valueKey] || 0) + blendCurrent / 2;
+        currentByStyle[growthKey] = (currentByStyle[growthKey] || 0) + blendCurrent / 2;
+        postByStyle[valueKey] = (postByStyle[valueKey] || 0) + blendPost / 2;
+        postByStyle[growthKey] = (postByStyle[growthKey] || 0) + blendPost / 2;
+      }
+    }
+
+    const currentTotal = outputStyles.reduce((s, st) => s + (currentByStyle[st] || 0), 0);
+    const postTotal = outputStyles.reduce((s, st) => s + (postByStyle[st] || 0), 0);
 
     // Cap split: Large 50%, Mid 30%, Small 20%
-    // Within each: Value 60%, Blend 0%, Growth 40%
+    // Within each: Value 50%, Growth 50%
     const capSplit = { Large: 0.5, Mid: 0.3, Small: 0.2 };
-    const styleSplit = { Value: 0.6, Blend: 0, Growth: 0.4 };
+    const styleSplit = { Value: 0.5, Growth: 0.5 };
 
-    const rows = styles.map(style => {
+    const rows = outputStyles.map(style => {
       const parts = style.split(' ');
       const cap = parts[1]; // Large/Mid/Small
-      const valStyle = parts[2]; // Value/Blend/Growth
+      const valStyle = parts[2]; // Value/Growth
       const targetPct = sectionTarget * capSplit[cap] * styleSplit[valStyle];
 
       const currentDollar = currentByStyle[style] || 0;
@@ -147,8 +171,8 @@ export function getCapitalizationData(accounts, targetProfile) {
   const domesticTarget = targetProfile['Domestic'] || 0;
   const foreignTarget = targetProfile['Foreign'] || 0;
 
-  const domestic = calcSection(domesticStyles, domesticTarget);
-  const foreign = calcSection(foreignStyles, foreignTarget);
+  const domestic = calcSection(domesticAllStyles, domesticOutputStyles, domesticTarget);
+  const foreign = calcSection(foreignAllStyles, foreignOutputStyles, foreignTarget);
 
   // Combined
   const combinedRows = domestic.rows.map((dRow, i) => {

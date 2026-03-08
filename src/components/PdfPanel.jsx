@@ -109,9 +109,9 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   ];
 
   const CAP_GROUPS = [
-    { label: 'Large', indices: [0, 1, 2] },
-    { label: 'Mid', indices: [3, 4, 5] },
-    { label: 'Small', indices: [6, 7, 8] },
+    { label: 'Large', indices: [0, 1] },
+    { label: 'Mid', indices: [2, 3] },
+    { label: 'Small', indices: [4, 5] },
   ];
 
   function diffColor(val) {
