@@ -343,7 +343,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 }
 
 export default function PdfPanel() {
-  const { accounts, assumptions, theme, showZeroRows } = useAppContext();
+  const { accounts, assumptions, theme, showZeroRows, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [generating, setGenerating] = useState(false);
   const [includeSections, setIncludeSections] = useState({
@@ -402,8 +402,8 @@ export default function PdfPanel() {
   const anySelected = includeSections.summary || includeSections.capitalization || includeSections.securities;
 
   const { rows: summaryRows, total: summaryTotal } = useMemo(
-    () => getSummaryData(accounts, targetProfile),
-    [accounts, targetProfile]
+    () => getSummaryData(accounts, targetProfile, customSecurities),
+    [accounts, targetProfile, customSecurities]
   );
 
   const capData = useMemo(

@@ -2,14 +2,15 @@ import { useRef } from 'react';
 import { useAppContext } from '../AppContext';
 
 export default function SessionControls() {
-  const { assumptions, accounts, loadSession } = useAppContext();
+  const { assumptions, accounts, customSecurities, loadSession } = useAppContext();
   const fileRef = useRef();
 
   const handleExport = () => {
     const data = {
-      version: '1.0',
+      version: '1.1',
       exportedAt: new Date().toISOString(),
       assumptions,
+      customSecurities,
       accounts: accounts.map(a => ({
         id: a.id,
         name: a.name,

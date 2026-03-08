@@ -225,12 +225,12 @@ function Pie3DChart({ data, theme }) {
 }
 
 export default function PieChartWidget({ visible = true }) {
-  const { accounts, assumptions, theme } = useAppContext();
+  const { accounts, assumptions, theme, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
 
   const { rows } = useMemo(
-    () => getSummaryData(accounts, targetProfile),
-    [accounts, targetProfile]
+    () => getSummaryData(accounts, targetProfile, customSecurities),
+    [accounts, targetProfile, customSecurities]
   );
 
   const pieData = rows

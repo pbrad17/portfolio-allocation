@@ -53,7 +53,7 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 }
 
 function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
-  const { updateHolding, removeHolding, moveHolding } = useAppContext();
+  const { updateHolding, removeHolding, moveHolding, customSecurities } = useAppContext();
   const [notFound, setNotFound] = useState(false);
 
   const mv = getMarketValue(holding);
@@ -63,14 +63,21 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
   const handleTickerBlur = () => {
     const ticker = holding.ticker.toUpperCase().trim();
     updateHolding(accountId, holding.id, 'ticker', ticker);
-    const info = TICKER_DB[ticker];
-    if (info) {
+    const cs = customSecurities[ticker];
+    if (cs) {
       setNotFound(false);
-      updateHolding(accountId, holding.id, 'securityName', info.name);
-      updateHolding(accountId, holding.id, 'style', info.style);
-      updateHolding(accountId, holding.id, 'price', info.price);
-    } else if (ticker) {
-      setNotFound(true);
+      updateHolding(accountId, holding.id, 'securityName', cs.name);
+      updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
+    } else {
+      const info = TICKER_DB[ticker];
+      if (info) {
+        setNotFound(false);
+        updateHolding(accountId, holding.id, 'securityName', info.name);
+        updateHolding(accountId, holding.id, 'style', info.style);
+        updateHolding(accountId, holding.id, 'price', info.price);
+      } else if (ticker) {
+        setNotFound(true);
+      }
     }
   };
 
@@ -113,6 +120,15 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
           {STYLE_OPTIONS.map(s => (
             <option key={s.style} value={s.style} className="bg-dark-bg">{s.style}</option>
           ))}
+          {Object.keys(customSecurities).length > 0 && (
+            <optgroup label="Custom Securities">
+              {Object.entries(customSecurities).map(([t, cs]) => (
+                <option key={`custom-${t}`} value={`Custom: ${t}`} className="bg-dark-bg">
+                  Custom: {t}{cs.name ? ` - ${cs.name}` : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </td>
       <td className="px-2 py-1">

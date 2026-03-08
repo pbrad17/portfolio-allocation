@@ -33,6 +33,7 @@ export function AppProvider({ children }) {
   });
 
   const [accounts, setAccounts] = useState([createEmptyAccount(1)]);
+  const [customSecurities, setCustomSecurities] = useState({});
   const [activeTab, setActiveTab] = useState('assumptions');
   const [showZeroRows, setShowZeroRows] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('bp-theme') || 'light');
@@ -47,6 +48,29 @@ export function AppProvider({ children }) {
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  }, []);
+
+  const addCustomSecurity = useCallback((ticker) => {
+    setCustomSecurities(prev => ({
+      ...prev,
+      [ticker.toUpperCase()]: { name: '', allocations: {} },
+    }));
+  }, []);
+
+  const updateCustomSecurity = useCallback((ticker, updates) => {
+    setCustomSecurities(prev => {
+      const existing = prev[ticker];
+      if (!existing) return prev;
+      return { ...prev, [ticker]: { ...existing, ...updates } };
+    });
+  }, []);
+
+  const removeCustomSecurity = useCallback((ticker) => {
+    setCustomSecurities(prev => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
   }, []);
 
   const addAccount = useCallback(() => {
@@ -115,6 +139,7 @@ export function AppProvider({ children }) {
 
   const loadSession = useCallback((data) => {
     if (data.assumptions) setAssumptions(prev => ({ ...prev, ...data.assumptions }));
+    if (data.customSecurities) setCustomSecurities(data.customSecurities);
     if (data.accounts) {
       holdingIdCounter = 1;
       const loaded = data.accounts.map(acct => ({
@@ -179,6 +204,8 @@ export function AppProvider({ children }) {
   const value = {
     assumptions, setAssumptions,
     accounts, setAccounts,
+    customSecurities, setCustomSecurities,
+    addCustomSecurity, updateCustomSecurity, removeCustomSecurity,
     activeTab, setActiveTab,
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,

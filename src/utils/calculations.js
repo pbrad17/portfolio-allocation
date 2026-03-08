@@ -16,16 +16,28 @@ export function getPortfolioTotal(accounts) {
   return accounts.reduce((sum, acct) => sum + getAccountTotal(acct.holdings), 0);
 }
 
-export function getSummaryData(accounts, targetProfile) {
+export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
   const total = getPortfolioTotal(accounts);
   const categoryTotals = {};
 
   // Sum post values by category
   for (const acct of accounts) {
     for (const h of acct.holdings) {
-      const category = STYLE_TO_CATEGORY[h.style] || 'Other Equity';
       const postVal = getPostValue(h);
-      categoryTotals[category] = (categoryTotals[category] || 0) + postVal;
+      if (h.style && h.style.startsWith('Custom: ')) {
+        const csTicker = h.style.slice(8);
+        const cs = customSecurities[csTicker];
+        if (cs) {
+          for (const [cat, pct] of Object.entries(cs.allocations)) {
+            categoryTotals[cat] = (categoryTotals[cat] || 0) + postVal * pct;
+          }
+        } else {
+          categoryTotals['Other Equity'] = (categoryTotals['Other Equity'] || 0) + postVal;
+        }
+      } else {
+        const category = STYLE_TO_CATEGORY[h.style] || 'Other Equity';
+        categoryTotals[category] = (categoryTotals[category] || 0) + postVal;
+      }
     }
   }
 

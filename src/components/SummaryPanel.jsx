@@ -38,12 +38,12 @@ function TotalRow({ label, data, borderClass = 'border-t-2 border-accent' }) {
 }
 
 export default function SummaryPanel() {
-  const { accounts, assumptions, showZeroRows, setShowZeroRows } = useAppContext();
+  const { accounts, assumptions, showZeroRows, setShowZeroRows, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
 
   const { rows, total } = useMemo(
-    () => getSummaryData(accounts, targetProfile),
-    [accounts, targetProfile]
+    () => getSummaryData(accounts, targetProfile, customSecurities),
+    [accounts, targetProfile, customSecurities]
   );
 
   const displayRows = showZeroRows ? rows : rows.filter(r => r.portfolioDollar !== 0 || r.targetPct !== 0);
