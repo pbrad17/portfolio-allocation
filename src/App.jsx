@@ -46,41 +46,11 @@ function AppContent() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <svg width="32" height="32" viewBox="0 0 16 16" shapeRendering="crispEdges">
-                <rect x="5" y="1" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="1" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="1" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="1" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="9" y="2" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="3" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="4" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="5" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="6" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="7" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="8" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="9" width="1" height="1" fill="currentColor"/>
-                <rect x="1" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="10" width="1" height="1" fill="currentColor"/>
-                <rect x="2" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="12" y="11" width="1" height="1" fill="currentColor"/>
-                <rect x="3" y="12" width="1" height="1" fill="currentColor"/>
-                <rect x="11" y="12" width="1" height="1" fill="currentColor"/>
-                <rect x="4" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="5" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="6" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="7" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="8" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="9" y="13" width="1" height="1" fill="currentColor"/>
-                <rect x="10" y="13" width="1" height="1" fill="currentColor"/>
+              <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="2.5" fill="none" />
+                <path d="M24 4 A20 20 0 0 1 44 24 L24 24 Z" fill="var(--theme-accent)" opacity="0.85" />
+                <path d="M44 24 A20 20 0 0 1 14 41.3 L24 24 Z" fill="var(--theme-steel-blue)" opacity="0.85" />
+                <path d="M14 41.3 A20 20 0 0 1 24 4 L24 24 Z" fill="var(--theme-header-bg)" opacity="0.85" />
               </svg>
               <h1 className="text-2xl font-bold tracking-wide">Pbrad's Portfolio Allocation Tool</h1>
             </div>
