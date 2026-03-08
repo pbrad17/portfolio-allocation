@@ -98,13 +98,20 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   const sumCols = getVisibleSumCols(includeSummaryColumns);
 
   const capCols = [
-    { label: 'Style', width: '20%', align: 'left' },
-    { label: 'Current $', width: '14%', align: 'right' },
-    { label: 'Current %', width: '12%', align: 'right' },
-    { label: 'Post $', width: '14%', align: 'right' },
-    { label: 'Post %', width: '12%', align: 'right' },
-    { label: 'Target %', width: '12%', align: 'right' },
-    { label: 'Diff %', width: '16%', align: 'right' },
+    { label: 'Style', width: '18%', align: 'left' },
+    { label: 'Current $', width: '13%', align: 'right' },
+    { label: 'Current %', width: '10%', align: 'right' },
+    { label: 'Change $', width: '12%', align: 'right' },
+    { label: 'Post $', width: '13%', align: 'right' },
+    { label: 'Post %', width: '10%', align: 'right' },
+    { label: 'Target %', width: '10%', align: 'right' },
+    { label: 'Diff %', width: '14%', align: 'right' },
+  ];
+
+  const CAP_GROUPS = [
+    { label: 'Large', indices: [0, 1, 2] },
+    { label: 'Mid', indices: [3, 4, 5] },
+    { label: 'Small', indices: [6, 7, 8] },
   ];
 
   function diffColor(val) {
@@ -147,21 +154,66 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   }
 
   function renderCapSection(title, section) {
+    const allRows = section.rows;
+
+    function sumCapGroup(indices) {
+      return indices.reduce(
+        (acc, i) => {
+          const r = allRows[i];
+          if (r) {
+            acc.currentDollar += r.currentDollar;
+            acc.currentPct += r.currentPct;
+            acc.changeDollar += r.changeDollar;
+            acc.postDollar += r.postDollar;
+            acc.postPct += r.postPct;
+            acc.targetPct += r.targetPct;
+          }
+          return acc;
+        },
+        { currentDollar: 0, currentPct: 0, changeDollar: 0, postDollar: 0, postPct: 0, targetPct: 0 }
+      );
+    }
+
+    function capRowValues(r) {
+      return [r.style, formatCurrency(r.currentDollar), formatPercent(r.currentPct), formatCurrency(r.changeDollar), formatCurrency(r.postDollar), formatPercent(r.postPct), formatPercent(r.targetPct), formatPercent(r.difference)];
+    }
+
     return (
       <View key={title}>
         <Text style={s.sectionTitle}>{title}</Text>
         <View style={s.tableHeader}>
           {capCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
         </View>
-        {section.rows.filter(r => r.currentDollar || r.postDollar || r.targetPct).map((r, i) => (
-          <View key={r.style} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
-            {[r.style, formatCurrency(r.currentDollar), formatPercent(r.currentPct), formatCurrency(r.postDollar), formatPercent(r.postPct), formatPercent(r.targetPct), formatPercent(r.difference)].map((v, ci) => (
-              <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }, ci === 6 ? { color: diffColor(r.difference) } : {}]}>{v}</Text>
-            ))}
-          </View>
-        ))}
+        {CAP_GROUPS.map(group => {
+          const groupRows = group.indices.map(i => allRows[i]).filter(r => r && (r.currentDollar || r.postDollar || r.targetPct));
+          if (groupRows.length === 0) return null;
+          const subtotal = sumCapGroup(group.indices);
+          const subtotalDiff = subtotal.postPct - subtotal.targetPct;
+          return (
+            <View key={group.label}>
+              {/* Group header */}
+              <View style={[s.row, { backgroundColor: c.sectionBg }]}>
+                <Text style={[s.cell, { fontWeight: 'bold', color: c.steelBlue }]}>{group.label}</Text>
+              </View>
+              {/* Data rows */}
+              {groupRows.map((r, i) => (
+                <View key={r.style} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+                  {capRowValues(r).map((v, ci) => (
+                    <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }, ci === 7 ? { color: diffColor(r.difference) } : {}]}>{v}</Text>
+                  ))}
+                </View>
+              ))}
+              {/* Subtotal row */}
+              <View style={[s.row, { borderTopWidth: 0.5, borderTopColor: c.border, backgroundColor: c.darkBg }]}>
+                {[`${group.label} Total`, formatCurrency(subtotal.currentDollar), formatPercent(subtotal.currentPct), formatCurrency(subtotal.changeDollar), formatCurrency(subtotal.postDollar), formatPercent(subtotal.postPct), formatPercent(subtotal.targetPct), formatPercent(subtotalDiff)].map((v, ci) => (
+                  <Text key={ci} style={[s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align, fontWeight: 'bold' }, ci === 7 ? { color: diffColor(subtotalDiff) } : ci === 0 ? { color: c.steelBlue } : {}]}>{v}</Text>
+                ))}
+              </View>
+            </View>
+          );
+        })}
         <View style={s.totalRow}>
-          {['Total', formatCurrency(section.currentTotal), formatPercent(section.currentTotalPct), formatCurrency(section.postTotal), formatPercent(section.postTotalPct), formatPercent(section.targetTotalPct), formatPercent(section.postTotalPct - section.targetTotalPct)].map((v, ci) => (
+          {['Total', formatCurrency(section.currentTotal), formatPercent(section.currentTotalPct), formatCurrency(section.changeTotal), formatCurrency(section.postTotal), formatPercent(section.postTotalPct), formatPercent(section.targetTotalPct), formatPercent(section.postTotalPct - section.targetTotalPct)].map((v, ci) => (
             <Text key={ci} style={[ci === 0 ? s.cellAccent : s.cell, { width: capCols[ci].width, textAlign: capCols[ci].align }]}>{v}</Text>
           ))}
         </View>
