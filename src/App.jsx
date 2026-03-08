@@ -1,4 +1,5 @@
 import { AppProvider, useAppContext } from './AppContext';
+import { formatDate } from './utils/formatting';
 import AssumptionsPanel from './components/AssumptionsPanel';
 import SecuritiesPanel from './components/SecuritiesPanel';
 import SummaryPanel from './components/SummaryPanel';
@@ -56,7 +57,7 @@ function AppContent() {
             </div>
             {assumptions.clientName && (
               <p className="text-steel-blue text-sm mt-1">
-                {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
+                {assumptions.clientName} | As of {formatDate(assumptions.asOfDate)} | Target: {assumptions.targetProfile}
               </p>
             )}
           </div>

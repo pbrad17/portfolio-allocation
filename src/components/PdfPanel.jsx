@@ -10,7 +10,7 @@ import {
   getSummaryData, getSectionTotal, getCapitalizationData,
   getAccountTotal, getMarketValue, getPostValue,
 } from '../utils/calculations';
-import { formatCurrency, formatPercent } from '../utils/formatting';
+import { formatCurrency, formatPercent, formatDate, formatDateFile } from '../utils/formatting';
 
 const PALETTES = {
   dark: {
@@ -249,7 +249,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         <View style={s.header}>
           <Text style={s.title}>Portfolio Allocation Report</Text>
           <Text style={s.subtitle}>
-            {assumptions.clientName} | As of {assumptions.asOfDate} | Target: {assumptions.targetProfile}
+            {assumptions.clientName} | As of {formatDate(assumptions.asOfDate)} | Target: {assumptions.targetProfile}
           </Text>
         </View>
 
@@ -280,7 +280,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       <Page size="LETTER" style={[s.page, { padding: 25 }]} key="capitalization">
         <View style={[s.header, { padding: 8, marginBottom: 10 }]}>
           <Text style={[s.title, { fontSize: 14 }]}>Equity Capitalization Breakdown</Text>
-          <Text style={s.subtitle}>{assumptions.clientName} | {assumptions.asOfDate}</Text>
+          <Text style={s.subtitle}>{assumptions.clientName} | {formatDate(assumptions.asOfDate)}</Text>
         </View>
         {renderCapSection('Domestic Equity', capData.domestic)}
         {renderCapSection('Foreign Equity', capData.foreign)}
@@ -417,7 +417,7 @@ export default function PdfPanel() {
     { name: 'Alternatives', categories: SUMMARY_SECTIONS.Alternatives },
   ];
 
-  const fileName = `${(assumptions.clientName || 'Portfolio').replace(/\s+/g, '_')}_Report_${assumptions.asOfDate}.pdf`;
+  const fileName = `${(assumptions.clientName || 'Portfolio').replace(/\s+/g, '_')}_Report_${formatDateFile(assumptions.asOfDate)}.pdf`;
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);

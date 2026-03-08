@@ -19,3 +19,15 @@ export function formatPrice(value) {
   if (value == null || isNaN(value)) return '0.00';
   return Number(value).toFixed(2);
 }
+
+export function formatDate(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-');
+  return `${Number(m)}/${Number(d)}/${y}`;
+}
+
+export function formatDateFile(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-');
+  return `${Number(m)}-${Number(d)}-${y}`;
+}

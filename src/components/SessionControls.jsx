@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useAppContext } from '../AppContext';
+import { formatDateFile } from '../utils/formatting';
 
 export default function SessionControls() {
   const { assumptions, accounts, customSecurities, loadSession } = useAppContext();
@@ -30,7 +31,7 @@ export default function SessionControls() {
     const a = document.createElement('a');
     const name = assumptions.clientName.replace(/\s+/g, '_') || 'Portfolio';
     a.href = url;
-    a.download = `${name}_Portfolio_${assumptions.asOfDate}.json`;
+    a.download = `${name}_Portfolio_${formatDateFile(assumptions.asOfDate)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
