@@ -10,11 +10,21 @@ const CAP_GROUPS = [
   { label: 'Small', indices: [6, 7, 8] },
 ];
 
-const COL_HEADERS = ['Style', 'Current $', 'Current %', 'Change $', 'Post $', 'Post %', 'Target %', 'Difference %'];
+const COLUMNS = [
+  { key: 'style',         label: 'Style',        width: '18%', align: 'left',  fmt: (r) => r.style },
+  { key: 'currentDollar', label: 'Current $',     width: '12%', align: 'right', fmt: (r) => formatCurrency(r.currentDollar) },
+  { key: 'currentPct',    label: 'Current %',     width: '11%', align: 'right', fmt: (r) => formatPercent(r.currentPct) },
+  { key: 'changeDollar',  label: 'Change $',      width: '12%', align: 'right', fmt: (r) => formatCurrency(r.changeDollar) },
+  { key: 'postDollar',    label: 'Post $',        width: '12%', align: 'right', fmt: (r) => formatCurrency(r.postDollar) },
+  { key: 'postPct',       label: 'Post %',        width: '11%', align: 'right', fmt: (r) => formatPercent(r.postPct) },
+  { key: 'targetPct',     label: 'Target %',      width: '11%', align: 'right', fmt: (r) => formatPercent(r.targetPct) },
+  { key: 'difference',    label: 'Difference %',  width: '13%', align: 'right', fmt: (r) => formatPercent(r.difference) },
+];
 
-function DiffCell({ value }) {
-  const color = value > 0.0001 ? 'text-positive' : value < -0.0001 ? 'text-negative' : '';
-  return <td className={`px-3 py-1.5 text-right text-sm ${color}`}>{formatPercent(value)}</td>;
+function diffColorClass(value) {
+  if (value > 0.0001) return 'text-positive';
+  if (value < -0.0001) return 'text-negative';
+  return '';
 }
 
 function sumGroup(rows, indices) {
@@ -37,15 +47,21 @@ function sumGroup(rows, indices) {
 
 function CapTable({ title, section, showZeroRows }) {
   const allRows = section.rows;
+  const numCols = COLUMNS.length;
 
   return (
     <div className="mb-8">
       <h3 className="text-lg font-semibold text-accent mb-2 border-b border-steel-blue pb-1">{title}</h3>
-      <table className="w-full">
+      <table className="w-full" style={{ tableLayout: 'fixed' }}>
+        <colgroup>
+          {COLUMNS.map(col => (
+            <col key={col.key} style={{ width: col.width }} />
+          ))}
+        </colgroup>
         <thead>
           <tr className="bg-header-bg">
-            {COL_HEADERS.map(h => (
-              <th key={h} className="px-3 py-2 text-left text-xs font-medium text-text-primary/90">{h}</th>
+            {COLUMNS.map(col => (
+              <th key={col.key} className={`px-3 py-2 text-xs font-medium text-text-primary/90 text-${col.align}`}>{col.label}</th>
             ))}
           </tr>
         </thead>
@@ -59,47 +75,51 @@ function CapTable({ title, section, showZeroRows }) {
             if (!showZeroRows && filteredRows.length === 0) return [];
 
             const subtotal = sumGroup(allRows, group.indices);
-            const subtotalDiff = subtotal.postPct - subtotal.targetPct;
+            subtotal.style = `${group.label} Total`;
+            subtotal.difference = subtotal.postPct - subtotal.targetPct;
 
             return [
               <tr key={`${group.label}-header`} className="bg-section-bg">
-                <td colSpan={8} className="px-3 py-1.5 text-steel-blue font-semibold text-sm">{group.label}</td>
+                <td colSpan={numCols} className="px-3 py-1.5 text-steel-blue font-semibold text-sm">{group.label}</td>
               </tr>,
               ...filteredRows.map((r, i) => (
                 <tr key={r.style} className={i % 2 === 0 ? 'bg-dark-bg' : 'bg-alt-bg'}>
-                  <td className="px-3 py-1.5 text-sm">{r.style}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(r.currentDollar)}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatPercent(r.currentPct)}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(r.changeDollar)}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(r.postDollar)}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatPercent(r.postPct)}</td>
-                  <td className="px-3 py-1.5 text-right text-sm">{formatPercent(r.targetPct)}</td>
-                  <DiffCell value={r.difference} />
+                  {COLUMNS.map(col => (
+                    <td key={col.key} className={`px-3 py-1.5 text-sm text-${col.align} ${col.key === 'difference' ? diffColorClass(r.difference) : ''}`}>
+                      {col.fmt(r)}
+                    </td>
+                  ))}
                 </tr>
               )),
               <tr key={`${group.label}-subtotal`} className="border-t border-border bg-dark-bg">
-                <td className="px-3 py-1.5 text-sm font-semibold text-steel-blue">{group.label} Total</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatCurrency(subtotal.currentDollar)}</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatPercent(subtotal.currentPct)}</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatCurrency(subtotal.changeDollar)}</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatCurrency(subtotal.postDollar)}</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatPercent(subtotal.postPct)}</td>
-                <td className="px-3 py-1.5 text-right text-sm font-semibold">{formatPercent(subtotal.targetPct)}</td>
-                <DiffCell value={subtotalDiff} />
+                {COLUMNS.map(col => (
+                  <td key={col.key} className={`px-3 py-1.5 text-sm font-semibold text-${col.align} ${col.key === 'style' ? 'text-steel-blue' : ''} ${col.key === 'difference' ? diffColorClass(subtotal.difference) : ''}`}>
+                    {col.fmt(subtotal)}
+                  </td>
+                ))}
               </tr>,
             ];
           })}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-accent bg-dark-bg font-semibold">
-            <td className="px-3 py-2 text-accent text-sm">Total</td>
-            <td className="px-3 py-2 text-right text-sm">{formatCurrency(section.currentTotal)}</td>
-            <td className="px-3 py-2 text-right text-sm">{formatPercent(section.currentTotalPct)}</td>
-            <td className="px-3 py-2 text-right text-sm">{formatCurrency(section.changeTotal)}</td>
-            <td className="px-3 py-2 text-right text-sm">{formatCurrency(section.postTotal)}</td>
-            <td className="px-3 py-2 text-right text-sm">{formatPercent(section.postTotalPct)}</td>
-            <td className="px-3 py-2 text-right text-sm">{formatPercent(section.targetTotalPct)}</td>
-            <DiffCell value={section.postTotalPct - section.targetTotalPct} />
+            {COLUMNS.map(col => {
+              const totalRow = {
+                style: 'Total',
+                currentDollar: section.currentTotal,
+                currentPct: section.currentTotalPct,
+                changeDollar: section.changeTotal,
+                postDollar: section.postTotal,
+                postPct: section.postTotalPct,
+                targetPct: section.targetTotalPct,
+                difference: section.postTotalPct - section.targetTotalPct,
+              };
+              return (
+                <td key={col.key} className={`px-3 py-2 text-sm text-${col.align} ${col.key === 'style' ? 'text-accent' : ''} ${col.key === 'difference' ? diffColorClass(totalRow.difference) : ''}`}>
+                  {col.fmt(totalRow)}
+                </td>
+              );
+            })}
           </tr>
         </tfoot>
       </table>
