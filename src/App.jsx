@@ -127,7 +127,7 @@ function AppContent() {
       <div className="bg-alt-bg/50 border-b border-border-light px-6 py-2 text-xs text-steel-blue flex items-center gap-3">
         <span>
           {priceLoading ? 'Updating prices...' : `Prices as of ${priceDate}`}
-          {' '} — update prices as needed before generating report.
+          {' '} (per Yahoo Finance) — update prices as needed before generating report.
         </span>
         <button
           onClick={refreshPrices}
