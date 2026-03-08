@@ -70,7 +70,7 @@ function CapTable({ title, section, showZeroRows }) {
             const groupRows = group.indices.map(i => allRows[i]).filter(Boolean);
             const filteredRows = showZeroRows
               ? groupRows
-              : groupRows.filter(r => r.currentDollar !== 0 || r.postDollar !== 0 || r.targetPct !== 0);
+              : groupRows.filter(r => r.currentDollar !== 0 || r.postDollar !== 0);
 
             if (!showZeroRows && filteredRows.length === 0) return [];
 
