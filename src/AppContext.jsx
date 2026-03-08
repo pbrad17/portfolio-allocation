@@ -91,6 +91,17 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  const moveAccount = useCallback((accountId, direction) => {
+    setAccounts(prev => {
+      const idx = prev.findIndex(a => a.id === accountId);
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
+      return updated;
+    });
+  }, []);
+
   const updateHolding = useCallback((accountId, holdingId, field, value) => {
     setAccounts(prev =>
       prev.map(a => {
@@ -209,7 +220,7 @@ export function AppProvider({ children }) {
     activeTab, setActiveTab,
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,
-    addAccount, removeAccount, renameAccount,
+    addAccount, removeAccount, renameAccount, moveAccount,
     updateHolding, addHolding, removeHolding, moveHolding,
     loadSession,
     priceDate, priceLoading, refreshPrices,

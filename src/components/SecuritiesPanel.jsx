@@ -329,25 +329,44 @@ function AccountTab({ account }) {
 }
 
 export default function SecuritiesPanel() {
-  const { accounts, addAccount } = useAppContext();
+  const { accounts, addAccount, moveAccount } = useAppContext();
   const [activeAccountId, setActiveAccountId] = useState(accounts[0]?.id);
   const activeAccount = accounts.find(a => a.id === activeAccountId) || accounts[0];
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {accounts.map(a => (
-          <button
-            key={a.id}
-            onClick={() => setActiveAccountId(a.id)}
-            className={`px-4 py-2 text-sm rounded-t border-b-2 transition-colors ${
-              a.id === activeAccount?.id
-                ? 'bg-header-bg text-accent border-accent'
-                : 'bg-dark-bg text-text-primary/60 border-transparent hover:text-text-primary hover:bg-alt-bg'
-            }`}
-          >
-            {a.name}
-          </button>
+        {accounts.map((a, idx) => (
+          <div key={a.id} className="flex items-center">
+            {a.id === activeAccount?.id && idx > 0 && (
+              <button
+                onClick={() => moveAccount(a.id, -1)}
+                className="text-steel-blue/50 hover:text-steel-blue text-xs px-0.5"
+                title="Move account left"
+              >
+                &#9664;
+              </button>
+            )}
+            <button
+              onClick={() => setActiveAccountId(a.id)}
+              className={`px-4 py-2 text-sm rounded-t border-b-2 transition-colors ${
+                a.id === activeAccount?.id
+                  ? 'bg-header-bg text-accent border-accent'
+                  : 'bg-dark-bg text-text-primary/60 border-transparent hover:text-text-primary hover:bg-alt-bg'
+              }`}
+            >
+              {a.name}
+            </button>
+            {a.id === activeAccount?.id && idx < accounts.length - 1 && (
+              <button
+                onClick={() => moveAccount(a.id, 1)}
+                className="text-steel-blue/50 hover:text-steel-blue text-xs px-0.5"
+                title="Move account right"
+              >
+                &#9654;
+              </button>
+            )}
+          </div>
         ))}
         {accounts.length < 15 && (
           <button
