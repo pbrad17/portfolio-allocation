@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { TICKER_DB } from '../data/tickerDb';
 import { STYLE_OPTIONS, STYLE_TO_CATEGORY } from '../data/styleMapping';
@@ -56,42 +56,41 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
   const { updateHolding, removeHolding, moveHolding, customSecurities, addCustomSecurity, updateCustomSecurity } = useAppContext();
   const [notFound, setNotFound] = useState(false);
 
-  // Auto-add to custom securities when user modifies name or style
-  useEffect(() => {
-    const ticker = holding.ticker?.toUpperCase().trim();
-    if (!ticker || !holding.style) return;
-    if (holding.style.startsWith('Custom: ')) return;
+  const ticker = holding.ticker?.toUpperCase().trim();
+  const dbEntry = ticker ? TICKER_DB[ticker] : null;
+  const csEntry = ticker ? customSecurities[ticker] : null;
+  const isCustomStyle = holding.style?.startsWith('Custom: ');
 
-    const dbEntry = TICKER_DB[ticker];
-    const category = STYLE_TO_CATEGORY[holding.style] || 'Other Equity';
-
-    if (!dbEntry) {
-      // Unknown ticker — auto-add to custom securities
-      if (!holding.securityName) return;
-      if (!customSecurities[ticker]) {
-        addCustomSecurity(ticker);
-      }
-      updateCustomSecurity(ticker, {
-        name: holding.securityName,
-        allocations: { [category]: 1.0 },
-      });
-      updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
-    } else {
-      // Known ticker with modified name or style
-      const nameChanged = holding.securityName && holding.securityName !== dbEntry.name;
-      const styleChanged = holding.style !== dbEntry.style;
-      if (nameChanged || styleChanged) {
-        if (!customSecurities[ticker]) {
-          addCustomSecurity(ticker);
-        }
-        updateCustomSecurity(ticker, {
-          name: holding.securityName,
-          allocations: { [category]: 1.0 },
-        });
-        updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
-      }
+  // Determine if the "save to custom" button should show
+  const canSaveCustom = (() => {
+    if (!ticker || !holding.securityName || !holding.style) return false;
+    if (isCustomStyle) {
+      // Already saved as custom — show button if name was edited since last save
+      return csEntry && holding.securityName !== csEntry.name;
     }
-  }, [holding.securityName, holding.style, holding.ticker]);
+    if (!dbEntry) {
+      // Unknown ticker with name and style filled in
+      return true;
+    }
+    // Known ticker with modified name or style
+    return holding.securityName !== dbEntry.name || holding.style !== dbEntry.style;
+  })();
+
+  const handleSaveCustom = () => {
+    const category = isCustomStyle
+      ? Object.keys(csEntry?.allocations || {})[0] || 'Other Equity'
+      : STYLE_TO_CATEGORY[holding.style] || 'Other Equity';
+    if (!customSecurities[ticker]) {
+      addCustomSecurity(ticker);
+    }
+    updateCustomSecurity(ticker, {
+      name: holding.securityName,
+      allocations: { [category]: 1.0 },
+    });
+    if (!isCustomStyle) {
+      updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
+    }
+  };
 
   const mv = getMarketValue(holding);
   const pv = getPostValue(holding);
@@ -197,6 +196,17 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
       <td className="px-2 py-1 text-sm text-right">{formatPercent(pctOfAccount)}</td>
       <td className="px-2 py-1">
         <div className="flex items-center gap-1">
+          {canSaveCustom && (
+            <button
+              onClick={handleSaveCustom}
+              className="text-accent/70 hover:text-accent text-sm leading-none"
+              title="Save to custom securities"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.784l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .784.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.784l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.183a1 1 0 0 1 .633.633l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.633l.551-.183a1 1 0 0 0 0-1.898l-.551-.184a1 1 0 0 1-.633-.632l-.183-.551Z" />
+              </svg>
+            </button>
+          )}
           <div className="flex flex-col">
             <button
               onClick={() => moveHolding(accountId, holding.id, -1)}
