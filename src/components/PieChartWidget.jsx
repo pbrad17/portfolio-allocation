@@ -4,9 +4,9 @@ import { TARGET_PROFILES } from '../data/targetProfiles';
 import { getSummaryData } from '../utils/calculations';
 import { PIE_COLORS } from '../data/colors';
 
-const WIDTH = 540;
+const WIDTH = 600;
 const HEIGHT = 460;
-const CX = 270;
+const CX = 300;
 const CY = 200;
 const RX = 150;  // horizontal radius (ellipse)
 const RY = 100;  // vertical radius (ellipse for 3D tilt)
@@ -159,16 +159,22 @@ function Pie3DChart({ data, theme }) {
         const labelRY = RY + 55;
 
         // Build label position array
+        const LEFT_MIN = 5;
+        const RIGHT_MAX = WIDTH - 5;
         const labels = slices
           .filter(slice => slice.value / total >= 0.02)
           .map(slice => {
-            const x = CX + labelRadius * Math.cos(slice.midAngle);
+            let x = CX + labelRadius * Math.cos(slice.midAngle);
             const y = CY + labelRY * Math.sin(slice.midAngle);
             const edgeX = CX + RX * Math.cos(slice.midAngle);
             const edgeY = CY + RY * Math.sin(slice.midAngle);
             const elbowX = CX + (RX + 20) * Math.cos(slice.midAngle);
             const elbowY = CY + (RY + 14) * Math.sin(slice.midAngle);
-            return { slice, x, y, origY: y, edgeX, edgeY, elbowX, elbowY, anchor: x > CX ? 'start' : 'end' };
+            const anchor = x > CX ? 'start' : 'end';
+            // Clamp x so text doesn't clip outside SVG
+            if (anchor === 'end') x = Math.max(x, LEFT_MIN);
+            else x = Math.min(x, RIGHT_MAX);
+            return { slice, x, y, origY: y, edgeX, edgeY, elbowX, elbowY, anchor };
           });
 
         // Resolve collisions per side
@@ -235,7 +241,7 @@ export default function PieChartWidget({ visible = true }) {
     <div
       id="summary-pie-chart"
       style={visible
-        ? { minWidth: 540 }
+        ? { minWidth: 600 }
         : { position: 'absolute', left: '-9999px', top: 0 }
       }
     >
