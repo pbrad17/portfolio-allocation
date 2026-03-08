@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../AppContext';
 import { TICKER_DB } from '../data/tickerDb';
-import { STYLE_OPTIONS } from '../data/styleMapping';
+import { STYLE_OPTIONS, STYLE_TO_CATEGORY } from '../data/styleMapping';
 import { getMarketValue, getPostValue, getAccountTotal } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
 
@@ -53,8 +53,45 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 }
 
 function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
-  const { updateHolding, removeHolding, moveHolding, customSecurities } = useAppContext();
+  const { updateHolding, removeHolding, moveHolding, customSecurities, addCustomSecurity, updateCustomSecurity } = useAppContext();
   const [notFound, setNotFound] = useState(false);
+
+  // Auto-add to custom securities when user modifies name or style
+  useEffect(() => {
+    const ticker = holding.ticker?.toUpperCase().trim();
+    if (!ticker || !holding.style) return;
+    if (holding.style.startsWith('Custom: ')) return;
+
+    const dbEntry = TICKER_DB[ticker];
+    const category = STYLE_TO_CATEGORY[holding.style] || 'Other Equity';
+
+    if (!dbEntry) {
+      // Unknown ticker — auto-add to custom securities
+      if (!holding.securityName) return;
+      if (!customSecurities[ticker]) {
+        addCustomSecurity(ticker);
+      }
+      updateCustomSecurity(ticker, {
+        name: holding.securityName,
+        allocations: { [category]: 1.0 },
+      });
+      updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
+    } else {
+      // Known ticker with modified name or style
+      const nameChanged = holding.securityName && holding.securityName !== dbEntry.name;
+      const styleChanged = holding.style !== dbEntry.style;
+      if (nameChanged || styleChanged) {
+        if (!customSecurities[ticker]) {
+          addCustomSecurity(ticker);
+        }
+        updateCustomSecurity(ticker, {
+          name: holding.securityName,
+          allocations: { [category]: 1.0 },
+        });
+        updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
+      }
+    }
+  }, [holding.securityName, holding.style, holding.ticker]);
 
   const mv = getMarketValue(holding);
   const pv = getPostValue(holding);
