@@ -195,7 +195,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(pv)}</td>
       <td className="px-2 py-1 text-sm text-right">{formatPercent(pctOfAccount)}</td>
       <td className="px-2 py-1">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2.5">
           {canSaveCustom && (
             <button
               onClick={handleSaveCustom}
