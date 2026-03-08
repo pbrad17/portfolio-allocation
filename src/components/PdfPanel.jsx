@@ -42,7 +42,7 @@ function makeStyles(c) {
     totalRow: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 4, borderTopWidth: 1.5, borderTopColor: c.accent, backgroundColor: c.darkBg },
     cell: { fontSize: 7, color: c.text },
     cellAccent: { fontSize: 7, color: c.accent, fontWeight: 'bold' },
-    chartImg: { width: 400, height: 383, alignSelf: 'center', marginVertical: 10 },
+    chartImg: { width: 352, height: 300, alignSelf: 'center', marginVertical: 10 },
   });
 }
 

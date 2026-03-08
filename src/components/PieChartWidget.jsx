@@ -156,7 +156,7 @@ function Pie3DChart({ data, theme }) {
       {(() => {
         const MIN_GAP = 22;
         const labelRadius = RX + 50;
-        const labelRY = RY + 35;
+        const labelRY = RY + 55;
 
         // Build label position array
         const labels = slices
