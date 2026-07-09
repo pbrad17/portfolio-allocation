@@ -3,15 +3,16 @@ import { useAppContext } from '../AppContext';
 import { formatDateFile } from '../utils/formatting';
 
 export default function SessionControls() {
-  const { assumptions, accounts, customSecurities, loadSession } = useAppContext();
+  const { assumptions, accounts, customSecurities, resolvedSecurities, loadSession } = useAppContext();
   const fileRef = useRef();
 
   const handleExport = () => {
     const data = {
-      version: '1.1',
+      version: '1.2',
       exportedAt: new Date().toISOString(),
       assumptions,
       customSecurities,
+      resolvedSecurities,
       accounts: accounts.map(a => ({
         id: a.id,
         name: a.name,

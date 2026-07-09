@@ -53,13 +53,27 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 }
 
 function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
-  const { updateHolding, removeHolding, moveHolding, customSecurities, addCustomSecurity, updateCustomSecurity } = useAppContext();
+  const {
+    updateHolding, removeHolding, moveHolding,
+    customSecurities, addCustomSecurity, updateCustomSecurity,
+    resolvedSecurities, resolveTicker, verifyResolved,
+  } = useAppContext();
   const [notFound, setNotFound] = useState(false);
+  const [lookupState, setLookupState] = useState(null); // null | 'loading' | 'composite'
+  const [justVerified, setJustVerified] = useState(false);
 
   const ticker = holding.ticker?.toUpperCase().trim();
   const dbEntry = ticker ? TICKER_DB[ticker] : null;
   const csEntry = ticker ? customSecurities[ticker] : null;
   const isCustomStyle = holding.style?.startsWith('Custom: ');
+  const resolvedEntry = ticker ? resolvedSecurities[ticker] : null;
+  const showUnverified = !!resolvedEntry && !resolvedEntry.verified && !notFound && lookupState !== 'loading';
+
+  const handleVerify = () => {
+    verifyResolved(ticker);
+    setJustVerified(true);
+    setTimeout(() => setJustVerified(false), 1500);
+  };
 
   // Determine if the "save to custom" button should show
   const canSaveCustom = (() => {
@@ -96,25 +110,52 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
   const pv = getPostValue(holding);
   const pctOfAccount = accountTotal > 0 ? pv / accountTotal : 0;
 
-  const handleTickerBlur = () => {
+  const handleTickerBlur = async () => {
     const ticker = holding.ticker.toUpperCase().trim();
     updateHolding(accountId, holding.id, 'ticker', ticker);
+    setNotFound(false);
+    setLookupState(null);
+    if (!ticker) return;
+
     const cs = customSecurities[ticker];
     if (cs) {
-      setNotFound(false);
       updateHolding(accountId, holding.id, 'securityName', cs.name);
       updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
-    } else {
-      const info = TICKER_DB[ticker];
-      if (info) {
-        setNotFound(false);
-        updateHolding(accountId, holding.id, 'securityName', info.name);
-        updateHolding(accountId, holding.id, 'style', info.style);
-        updateHolding(accountId, holding.id, 'price', info.price);
-      } else if (ticker) {
-        setNotFound(true);
-      }
+      return;
     }
+    const info = TICKER_DB[ticker];
+    if (info) {
+      updateHolding(accountId, holding.id, 'securityName', info.name);
+      updateHolding(accountId, holding.id, 'style', info.style);
+      updateHolding(accountId, holding.id, 'price', info.price);
+      return;
+    }
+    const known = resolvedSecurities[ticker];
+    if (known) {
+      updateHolding(accountId, holding.id, 'securityName', known.name);
+      updateHolding(accountId, holding.id, 'style', known.style);
+      updateHolding(accountId, holding.id, 'price', known.price);
+      return;
+    }
+
+    // Unknown ticker — try a live lookup (Yahoo + Morningstar classification)
+    setLookupState('loading');
+    const result = await resolveTicker(ticker);
+    setLookupState(null);
+    if (!result) {
+      setNotFound(true);
+      return;
+    }
+    if (result.confidence === 'manual' || !result.style) {
+      // Composite fund (target-date / allocation) — needs a Custom Security
+      if (result.name) updateHolding(accountId, holding.id, 'securityName', result.name);
+      if (result.price) updateHolding(accountId, holding.id, 'price', result.price);
+      setLookupState('composite');
+      return;
+    }
+    updateHolding(accountId, holding.id, 'securityName', result.name);
+    updateHolding(accountId, holding.id, 'style', result.style);
+    updateHolding(accountId, holding.id, 'price', result.price);
   };
 
   const handleKeyDown = (e) => {
@@ -134,7 +175,36 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
             className="w-20 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm focus:outline-none focus:border-accent"
             placeholder="Ticker"
           />
-          {notFound && <span className="absolute -top-1 -right-1 text-negative text-xs">*</span>}
+          {lookupState === 'loading' && (
+            <span
+              className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-steel-blue animate-pulse"
+              title="Looking up security..."
+            />
+          )}
+          {lookupState === 'composite' && (
+            <span
+              className="absolute -top-1 -right-1 text-negative text-xs cursor-help"
+              title="This is a composite fund (target-date / allocation). Define it as a Custom Security on the Assumptions tab."
+            >
+              *
+            </span>
+          )}
+          {notFound && lookupState !== 'composite' && (
+            <span className="absolute -top-1 -right-1 text-negative text-xs">*</span>
+          )}
+          {showUnverified && !justVerified && lookupState !== 'composite' && (
+            <button
+              onClick={handleVerify}
+              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 hover:bg-amber-300 cursor-pointer"
+              title={`Unverified: auto-classified${resolvedEntry?.category ? ` from Morningstar category "${resolvedEntry.category}"` : ''} via Yahoo as "${resolvedEntry?.style}". Click to confirm.`}
+            />
+          )}
+          {justVerified && (
+            <span
+              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-positive"
+              title="Classification confirmed"
+            />
+          )}
         </div>
       </td>
       <td className="px-2 py-1">
