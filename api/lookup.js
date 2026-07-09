@@ -1,4 +1,4 @@
-import { matchCategory } from '../src/data/categoryMap.js';
+import { matchCategory, isEmergingCountry } from '../src/data/categoryMap.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -90,7 +90,20 @@ function classifyEquity(meta, summary) {
   const profile = summary?.summaryProfile || {};
 
   // ADRs trade in USD but summaryProfile.country reveals the true domicile
-  const isDomestic = meta.currency === 'USD' && profile.country === 'United States';
+  const country = profile.country || null;
+
+  // Emerging-market domiciles map to the dedicated EM sleeve (Morningstar
+  // framework: Korea developed, Taiwan emerging; advisor treats HK as EM)
+  if (isEmergingCountry(country)) {
+    return {
+      style: 'Emerging Markets',
+      category: country,
+      country,
+      confidence: 'high',
+    };
+  }
+
+  const isDomestic = meta.currency === 'USD' && country === 'United States';
   const region = isDomestic ? 'Domestic' : 'Foreign';
 
   const marketCap = raw(summaryDetail.marketCap);
@@ -118,6 +131,7 @@ function classifyEquity(meta, summary) {
   return {
     style: `${region} ${size} ${vg}`,
     category: profile.sector || null,
+    country,
     confidence: 'review',
   };
 }
@@ -165,7 +179,7 @@ async function lookupSymbol(symbol) {
     // Classification degrades gracefully without quoteSummary data
   }
 
-  const { style, category, confidence, reason } = classify(meta, summary);
+  const { style, category, confidence, reason, country } = classify(meta, summary);
   const quoteType = summary?.quoteType || {};
 
   return {
@@ -175,6 +189,7 @@ async function lookupSymbol(symbol) {
     category,
     confidence,
     instrumentType: meta.instrumentType || null,
+    ...(country ? { country } : {}),
     ...(reason ? { reason } : {}),
   };
 }

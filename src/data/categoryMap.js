@@ -8,6 +8,29 @@
 
 const COMPOSITE = { style: null, confidence: 'manual', reason: 'composite' };
 
+// Countries whose individual stocks map to the "Emerging Markets" style.
+// Framework: Morningstar country classification (South Korea = developed,
+// Taiwan = emerging), with one advisor override: Hong Kong/Macau are treated
+// as emerging alongside mainland China. Israel and South Korea are developed.
+export const EM_COUNTRIES = new Set([
+  // Asia
+  'China', 'Hong Kong', 'Macau', 'Macao', 'Taiwan', 'India', 'Pakistan',
+  'Bangladesh', 'Sri Lanka', 'Vietnam', 'Thailand', 'Indonesia', 'Malaysia',
+  'Philippines', 'Kazakhstan', 'Mongolia',
+  // Latin America
+  'Brazil', 'Mexico', 'Chile', 'Peru', 'Colombia', 'Argentina', 'Uruguay',
+  'Panama', 'Venezuela',
+  // EMEA
+  'South Africa', 'Nigeria', 'Kenya', 'Egypt', 'Morocco', 'Turkey', 'Greece',
+  'Poland', 'Hungary', 'Czech Republic', 'Czechia', 'Romania', 'Russia',
+  'Ukraine', 'Georgia', 'Saudi Arabia', 'United Arab Emirates', 'Qatar',
+  'Kuwait', 'Bahrain', 'Oman', 'Jordan',
+]);
+
+export function isEmergingCountry(country) {
+  return !!country && EM_COUNTRIES.has(country.trim());
+}
+
 export const CATEGORY_TO_STYLE = {
   // --- US equity style box -------------------------------------------------
   'Large Value':    { style: 'Domestic Large Value',  confidence: 'high' },
