@@ -16,11 +16,9 @@ export function getPortfolioTotal(accounts) {
   return accounts.reduce((sum, acct) => sum + getAccountTotal(acct.holdings), 0);
 }
 
-export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
-  const total = getPortfolioTotal(accounts);
+// Sum post values by category for a set of accounts
+function getCategoryTotals(accounts, customSecurities) {
   const categoryTotals = {};
-
-  // Sum post values by category
   for (const acct of accounts) {
     for (const h of acct.holdings) {
       const postVal = getPostValue(h);
@@ -40,6 +38,19 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
       }
     }
   }
+  return categoryTotals;
+}
+
+// Portfolio columns / targets / reallocation are computed on the managed
+// basis (accounts where managed !== false); Overall columns include every
+// account. `total` keeps its old meaning (managed total) for compatibility.
+export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
+  const managedAccounts = accounts.filter(a => a.managed !== false);
+  const total = getPortfolioTotal(managedAccounts);
+  const overallTotal = getPortfolioTotal(accounts);
+
+  const categoryTotals = getCategoryTotals(managedAccounts, customSecurities);
+  const overallCategoryTotals = getCategoryTotals(accounts, customSecurities);
 
   const rows = [];
   const allCategories = [
@@ -51,6 +62,8 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
   for (const cat of allCategories) {
     const portfolioDollar = categoryTotals[cat] || 0;
     const portfolioPct = total > 0 ? portfolioDollar / total : 0;
+    const overallDollar = overallCategoryTotals[cat] || 0;
+    const overallPct = overallTotal > 0 ? overallDollar / overallTotal : 0;
     const targetPct = targetProfile[cat] || 0;
     const reallocation = total > 0 ? (targetPct - portfolioPct) * total : 0;
     const difference = portfolioPct - targetPct;
@@ -59,13 +72,15 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
       category: cat,
       portfolioDollar,
       portfolioPct,
+      overallDollar,
+      overallPct,
       targetPct,
       reallocation,
       difference,
     });
   }
 
-  return { rows, total };
+  return { rows, total, overallTotal };
 }
 
 export function getSectionTotal(rows, categories) {
@@ -75,13 +90,15 @@ export function getSectionTotal(rows, categories) {
       if (row) {
         acc.portfolioDollar += row.portfolioDollar;
         acc.portfolioPct += row.portfolioPct;
+        acc.overallDollar += row.overallDollar;
+        acc.overallPct += row.overallPct;
         acc.targetPct += row.targetPct;
         acc.reallocation += row.reallocation;
         acc.difference += row.difference;
       }
       return acc;
     },
-    { portfolioDollar: 0, portfolioPct: 0, targetPct: 0, reallocation: 0, difference: 0 }
+    { portfolioDollar: 0, portfolioPct: 0, overallDollar: 0, overallPct: 0, targetPct: 0, reallocation: 0, difference: 0 }
   );
 }
 

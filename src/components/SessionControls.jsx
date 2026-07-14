@@ -8,7 +8,7 @@ export default function SessionControls() {
 
   const handleExport = () => {
     const data = {
-      version: '1.2',
+      version: '1.3',
       exportedAt: new Date().toISOString(),
       assumptions,
       customSecurities,
@@ -17,6 +17,7 @@ export default function SessionControls() {
         id: a.id,
         name: a.name,
         sweepToCash: !!a.sweepToCash,
+        managed: a.managed !== false,
         holdings: a.holdings.map(h => ({
           ticker: h.ticker,
           securityName: h.securityName,

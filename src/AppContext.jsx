@@ -34,6 +34,7 @@ function createEmptyAccount(id, name) {
   return {
     id,
     name: name || `Account ${id}`,
+    managed: true,
     holdings: [createEmptyHolding()],
   };
 }
@@ -351,6 +352,14 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  const toggleManaged = useCallback((accountId) => {
+    setAccounts(prev =>
+      prev.map(a =>
+        a.id === accountId ? { ...a, managed: !(a.managed !== false) } : a
+      )
+    );
+  }, []);
+
   const moveHolding = useCallback((accountId, holdingId, direction) => {
     setAccounts(prev =>
       prev.map(a => {
@@ -365,6 +374,34 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  // Physically reorder an account's holdings by a column (Excel-style sort).
+  // valueOf(holding) returns a string or number; ascending=true for A→Z / low→high.
+  const sortHoldings = useCallback((accountId, valueOf, ascending) => {
+    setAccounts(prev =>
+      prev.map(a => {
+        if (a.id !== accountId) return a;
+        const holdings = [...a.holdings].sort((x, y) => {
+          const vx = valueOf(x);
+          const vy = valueOf(y);
+          // Rows with no value (blank tickers/names) always sink to the bottom
+          const emptyX = vx == null || vx === '';
+          const emptyY = vy == null || vy === '';
+          if (emptyX && emptyY) return 0;
+          if (emptyX) return 1;
+          if (emptyY) return -1;
+          let cmp;
+          if (typeof vx === 'string' || typeof vy === 'string') {
+            cmp = String(vx).localeCompare(String(vy), 'en', { sensitivity: 'base' });
+          } else {
+            cmp = vx - vy;
+          }
+          return ascending ? cmp : -cmp;
+        });
+        return { ...a, holdings };
+      })
+    );
+  }, []);
+
   const loadSession = useCallback((data) => {
     if (data.assumptions) setAssumptions(prev => ({ ...prev, ...data.assumptions }));
     if (data.customSecurities) setCustomSecurities(data.customSecurities);
@@ -375,6 +412,8 @@ export function AppProvider({ children }) {
       holdingIdCounter = 1;
       const loaded = data.accounts.map(acct => ({
         ...acct,
+        // Backward compat: session files older than v1.3 lack the managed flag
+        managed: acct.managed !== false ? true : false,
         holdings: acct.holdings.map(h => ({
           ...createEmptyHolding(),
           ...h,
@@ -497,6 +536,7 @@ export function AppProvider({ children }) {
     theme, toggleTheme,
     addAccount, removeAccount, renameAccount, moveAccount,
     updateHolding, addHolding, removeHolding, moveHolding, toggleSweep,
+    toggleManaged, sortHoldings,
     loadSession,
     priceDate, priceLoading, refreshPrices,
   };

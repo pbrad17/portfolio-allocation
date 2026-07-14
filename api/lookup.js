@@ -198,6 +198,48 @@ function classify(meta, summary, name) {
   return { style: null, category: null, confidence: 'review' };
 }
 
+// Expense ratio extraction — fund types only (MUTUALFUND, ETF, MONEYMARKET).
+// Sources in priority order (fundProfile is Morningstar-sourced data relayed
+// by Yahoo, which is what the advisor wants):
+//   1. fundProfile.feesExpensesInvestment.netExpRatio
+//   2. fundProfile.feesExpensesInvestment.annualReportExpenseRatio
+//   3. defaultKeyStatistics.annualReportExpenseRatio
+// Returns BOTH the raw number exactly as Yahoo provides it AND the fmt
+// string exactly as provided (e.g. "0.09%"), because the unit of the raw
+// value (fraction 0.0009 vs percent-number 0.09) cannot be verified from
+// this environment. The client displays fmt when present; post-deploy QA
+// must lock down the raw unit before raw is used in any math.
+// EQUITY and unknown types return {} — no expense fields at all — which is
+// what keeps individual stocks off the Expenses tab.
+function extractExpenseRatio(meta, summary) {
+  const type = meta.instrumentType;
+  if (type !== 'MUTUALFUND' && type !== 'ETF' && type !== 'MONEYMARKET') {
+    return {};
+  }
+
+  const fees = summary?.fundProfile?.feesExpensesInvestment || {};
+  const keyStats = summary?.defaultKeyStatistics || {};
+  const candidates = [
+    fees.netExpRatio,
+    fees.annualReportExpenseRatio,
+    keyStats.annualReportExpenseRatio,
+  ];
+
+  for (const candidate of candidates) {
+    const value = raw(candidate);
+    if (value != null) {
+      const fmt =
+        candidate && typeof candidate === 'object' && typeof candidate.fmt === 'string'
+          ? candidate.fmt
+          : null;
+      return { expenseRatio: value, expenseRatioFmt: fmt };
+    }
+  }
+
+  // Fund type but no expense data — the client lists these as excluded
+  return {};
+}
+
 async function lookupSymbol(symbol) {
   const meta = await fetchChartMeta(symbol);
   if (!meta || meta.regularMarketPrice == null) {
@@ -214,6 +256,7 @@ async function lookupSymbol(symbol) {
   const quoteType = summary?.quoteType || {};
   const name = quoteType.longName || quoteType.shortName || meta.longName || meta.shortName || symbol;
   const { style, category, confidence, reason, country } = classify(meta, summary, name);
+  const expenseFields = extractExpenseRatio(meta, summary);
 
   return {
     name,
@@ -222,6 +265,7 @@ async function lookupSymbol(symbol) {
     category,
     confidence,
     instrumentType: meta.instrumentType || null,
+    ...expenseFields,
     ...(country ? { country } : {}),
     ...(reason ? { reason } : {}),
   };

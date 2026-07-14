@@ -17,6 +17,8 @@ function SummaryRow({ row, bgClass }) {
       <td className="px-3 py-1.5 text-sm">{row.category}</td>
       <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(row.portfolioDollar)}</td>
       <td className="px-3 py-1.5 text-right text-sm">{formatPercent(row.portfolioPct)}</td>
+      <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(row.overallDollar)}</td>
+      <td className="px-3 py-1.5 text-right text-sm">{formatPercent(row.overallPct)}</td>
       <td className="px-3 py-1.5 text-right text-sm">{formatPercent(row.targetPct)}</td>
       <td className="px-3 py-1.5 text-right text-sm">{formatCurrency(row.reallocation)}</td>
       <DiffCell value={row.difference} />
@@ -30,6 +32,8 @@ function TotalRow({ label, data, borderClass = 'border-t-2 border-accent' }) {
       <td className="px-3 py-2 text-accent text-sm">{label}</td>
       <td className="px-3 py-2 text-right text-sm">{formatCurrency(data.portfolioDollar)}</td>
       <td className="px-3 py-2 text-right text-sm">{formatPercent(data.portfolioPct)}</td>
+      <td className="px-3 py-2 text-right text-sm">{formatCurrency(data.overallDollar)}</td>
+      <td className="px-3 py-2 text-right text-sm">{formatPercent(data.overallPct)}</td>
       <td className="px-3 py-2 text-right text-sm">{formatPercent(data.targetPct)}</td>
       <td className="px-3 py-2 text-right text-sm">{formatCurrency(data.reallocation)}</td>
       <DiffCell value={data.difference} />
@@ -41,12 +45,14 @@ export default function SummaryPanel() {
   const { accounts, assumptions, showZeroRows, setShowZeroRows, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
 
-  const { rows, total } = useMemo(
+  const { rows, total, overallTotal } = useMemo(
     () => getSummaryData(accounts, targetProfile, customSecurities),
     [accounts, targetProfile, customSecurities]
   );
 
-  const displayRows = showZeroRows ? rows : rows.filter(r => r.portfolioDollar !== 0 || r.targetPct !== 0);
+  const displayRows = showZeroRows
+    ? rows
+    : rows.filter(r => r.portfolioDollar !== 0 || r.overallDollar !== 0 || r.targetPct !== 0);
 
   const sections = [
     { name: 'Equities', categories: SUMMARY_SECTIONS.Equities },
@@ -57,6 +63,8 @@ export default function SummaryPanel() {
   const grandTotal = {
     portfolioDollar: total,
     portfolioPct: rows.reduce((s, r) => s + r.portfolioPct, 0),
+    overallDollar: overallTotal,
+    overallPct: rows.reduce((s, r) => s + r.overallPct, 0),
     targetPct: rows.reduce((s, r) => s + r.targetPct, 0),
     reallocation: rows.reduce((s, r) => s + r.reallocation, 0),
     difference: rows.reduce((s, r) => s + r.portfolioPct, 0) - rows.reduce((s, r) => s + r.targetPct, 0),
@@ -68,7 +76,9 @@ export default function SummaryPanel() {
         <h2 className="text-xl font-bold text-accent">Household Summary</h2>
         <div className="flex items-center gap-4">
           <span className="text-steel-blue text-sm">
-            Total Portfolio: <span className="text-text-primary font-semibold">{formatCurrency(total)}</span>
+            Managed: <span className="text-text-primary font-semibold">{formatCurrency(total)}</span>
+            {' | '}
+            Overall: <span className="text-text-primary font-semibold">{formatCurrency(overallTotal)}</span>
           </span>
           <label className="flex items-center gap-2 text-sm text-text-primary/60">
             <input
@@ -88,7 +98,7 @@ export default function SummaryPanel() {
           <table className="w-full">
             <thead>
               <tr className="bg-header-bg">
-                {['Category', 'Portfolio $', 'Portfolio %', 'Target %', 'Reallocation $', 'Difference %'].map((h, i) => (
+                {['Category', 'Portfolio $', 'Portfolio %', 'Overall $', 'Overall %', 'Target %', 'Reallocation $', 'Difference %'].map((h, i) => (
                   <th key={h} className={`px-3 py-2 text-xs font-medium text-text-primary/90 ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
                 ))}
               </tr>
@@ -100,7 +110,7 @@ export default function SummaryPanel() {
                 return (
                   <tbody key={section.name}>
                     <tr className="bg-section-bg">
-                      <td colSpan={6} className="px-3 py-1.5 text-sm font-semibold text-steel-blue border-l-2 border-steel-blue">
+                      <td colSpan={8} className="px-3 py-1.5 text-sm font-semibold text-steel-blue border-l-2 border-steel-blue">
                         {section.name}
                       </td>
                     </tr>

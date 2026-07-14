@@ -6,6 +6,7 @@ import SummaryPanel from './components/SummaryPanel';
 import CapitalizationPanel from './components/CapitalizationPanel';
 import PdfPanel from './components/PdfPanel';
 import DatabasePanel from './components/DatabasePanel';
+import ExpensesPanel from './components/ExpensesPanel';
 import SessionControls from './components/SessionControls';
 import PieChartWidget from './components/PieChartWidget';
 
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'securities', label: 'Securities' },
   { id: 'summary', label: 'Summary' },
   { id: 'capitalization', label: 'Capitalization' },
+  { id: 'expenses', label: 'Expenses' },
   { id: 'pdf', label: 'PDF Report' },
   { id: 'database', label: 'Database' },
 ];
@@ -117,6 +119,7 @@ function AppContent() {
         {activeTab === 'securities' && <SecuritiesPanel />}
         {activeTab === 'summary' && <SummaryPanel />}
         {activeTab === 'capitalization' && <CapitalizationPanel />}
+        {activeTab === 'expenses' && <ExpensesPanel />}
         {activeTab === 'pdf' && <PdfPanel />}
         {activeTab === 'database' && <DatabasePanel />}
       </div>

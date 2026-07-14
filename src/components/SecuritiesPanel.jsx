@@ -55,15 +55,15 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 // Pixel widths sized to the original compact inputs; Security Name (no width)
 // absorbs the remaining table width.
 const HOLDING_COLS = [
-  { label: 'Ticker',          width: '100px', align: 'left' },
-  { label: 'Security Name',   width: '280px', align: 'left' },
-  { label: 'Investment Style', width: '196px', align: 'left' },
-  { label: 'Quantity',        width: '112px', align: 'right' },
-  { label: 'Price',           width: '112px', align: 'right' },
-  { label: 'Market Value',    width: '110px', align: 'right' },
-  { label: 'Proposed Change', width: '130px', align: 'right' },
-  { label: 'Post Value',      width: '110px', align: 'right' },
-  { label: '% of Acct',       width: '72px',  align: 'right' },
+  { label: 'Ticker',          width: '100px', align: 'left',  sort: h => h.ticker },
+  { label: 'Security Name',   width: '280px', align: 'left',  sort: h => h.securityName },
+  { label: 'Investment Style', width: '196px', align: 'left',  sort: h => h.style },
+  { label: 'Quantity',        width: '112px', align: 'right', sort: h => h.quantity || 0, numeric: true },
+  { label: 'Price',           width: '112px', align: 'right', sort: h => h.price || 0, numeric: true },
+  { label: 'Market Value',    width: '110px', align: 'right', sort: h => getMarketValue(h), numeric: true },
+  { label: 'Proposed Change', width: '130px', align: 'right', sort: h => h.proposedChange || 0, numeric: true },
+  { label: 'Post Value',      width: '110px', align: 'right', sort: h => getPostValue(h), numeric: true },
+  { label: '% of Acct',       width: '72px',  align: 'right', sort: h => getPostValue(h), numeric: true },
   { label: '',                width: '148px', align: 'left' },
 ];
 
@@ -330,7 +330,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
           {rowComplete && (
             <button
               onClick={handleSaveCustom}
-              className={`text-sm leading-none ${hasUnsavedCustom ? 'text-accent/80 hover:text-accent' : 'text-accent/25 hover:text-accent/70'}`}
+              className={`text-sm leading-none ${hasUnsavedCustom ? 'text-accent hover:text-accent' : 'text-accent/50 hover:text-accent'}`}
               title={hasUnsavedCustom
                 ? 'Save to custom securities'
                 : 'Convert to a custom security (edit its multi-asset allocations on the Assumptions tab)'}
@@ -372,9 +372,21 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
 }
 
 function AccountTab({ account }) {
-  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep } = useAppContext();
+  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep, toggleManaged, sortHoldings } = useAppContext();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(account.name);
+  // Last sort applied via header click: { label, ascending } — indicator only;
+  // the sort physically reorders holdings (Excel-style), so manual moves remain valid.
+  const [lastSort, setLastSort] = useState(null);
+
+  const handleSort = (col) => {
+    if (!col.sort) return;
+    // First click: text A→Z, numbers high→low. Click again to flip.
+    const defaultAsc = !col.numeric;
+    const ascending = lastSort?.label === col.label ? !lastSort.ascending : defaultAsc;
+    sortHoldings(account.id, col.sort, ascending);
+    setLastSort({ label: col.label, ascending });
+  };
   const accountTotal = getAccountTotal(account.holdings);
   const marketTotal = account.holdings.reduce((s, h) => s + getMarketValue(h), 0);
   const changeTotal = account.holdings.reduce((s, h) => s + (h.proposedChange || 0), 0);
@@ -421,6 +433,18 @@ function AccountTab({ account }) {
           />
           Sweep to cash
         </label>
+        <label
+          className="flex items-center gap-1.5 text-sm text-text-primary/60 cursor-pointer"
+          title="Managed accounts count toward Portfolio columns and targets; unmanaged accounts appear only in Overall columns and are listed last on the PDF."
+        >
+          <input
+            type="checkbox"
+            checked={account.managed !== false}
+            onChange={() => toggleManaged(account.id)}
+            className="accent-accent"
+          />
+          Managed
+        </label>
         {accounts.length > 1 && (
           <button
             onClick={() => removeAccount(account.id)}
@@ -442,7 +466,17 @@ function AccountTab({ account }) {
           <thead>
             <tr className="bg-header-bg">
               {HOLDING_COLS.map(col => (
-                <th key={col.label || 'actions'} className={`px-2 py-2 text-xs font-medium text-text-primary/90 whitespace-nowrap text-${col.align}`}>{col.label}</th>
+                <th
+                  key={col.label || 'actions'}
+                  onClick={() => handleSort(col)}
+                  className={`px-2 py-2 text-xs font-medium text-text-primary/90 whitespace-nowrap text-${col.align} ${col.sort ? 'cursor-pointer hover:text-accent select-none' : ''}`}
+                  title={col.sort ? `Sort by ${col.label} (click again to reverse)` : undefined}
+                >
+                  {col.label}
+                  {lastSort?.label === col.label && (
+                    <span className="ml-1 text-accent">{lastSort.ascending ? '▲' : '▼'}</span>
+                  )}
+                </th>
               ))}
             </tr>
           </thead>
@@ -515,6 +549,9 @@ export default function SecuritiesPanel() {
               }`}
             >
               {a.name}
+              {a.managed === false && (
+                <span className="ml-1 text-xs text-steel-blue/60" title="Unmanaged account">(U)</span>
+              )}
             </button>
             {a.id === activeAccount?.id && idx < accounts.length - 1 && (
               <button

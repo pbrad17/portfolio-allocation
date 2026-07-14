@@ -55,6 +55,8 @@ const ALL_SUM_COLS = [
   { key: 'category', label: 'Category', width: 22, align: 'left', toggleable: false },
   { key: 'portfolioDollar', label: 'Portfolio $', width: 16, align: 'right', toggleable: true },
   { key: 'portfolioPct', label: 'Portfolio %', width: 14, align: 'right', toggleable: true },
+  { key: 'overallDollar', label: 'Overall $', width: 16, align: 'right', toggleable: true },
+  { key: 'overallPct', label: 'Overall %', width: 14, align: 'right', toggleable: true },
   { key: 'targetPct', label: 'Target %', width: 14, align: 'right', toggleable: true },
   { key: 'reallocation', label: 'Reallocation $', width: 18, align: 'right', toggleable: true },
   { key: 'difference', label: 'Difference %', width: 16, align: 'right', toggleable: true },
@@ -107,6 +109,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   const grandTotal = {
     portfolioDollar: summaryTotal,
     portfolioPct: summaryRows.reduce((s, r) => s + r.portfolioPct, 0),
+    overallDollar: summaryRows.reduce((s, r) => s + r.overallDollar, 0),
+    overallPct: summaryRows.reduce((s, r) => s + r.overallPct, 0),
     targetPct: summaryRows.reduce((s, r) => s + r.targetPct, 0),
     reallocation: summaryRows.reduce((s, r) => s + r.reallocation, 0),
     difference: summaryRows.reduce((s, r) => s + r.portfolioPct, 0) - summaryRows.reduce((s, r) => s + r.targetPct, 0),
@@ -132,6 +136,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     category: (row) => row.category,
     portfolioDollar: (row) => formatCurrency(row.portfolioDollar),
     portfolioPct: (row) => formatPercent(row.portfolioPct),
+    overallDollar: (row) => formatCurrency(row.overallDollar),
+    overallPct: (row) => formatPercent(row.overallPct),
     targetPct: (row) => formatPercent(row.targetPct),
     reallocation: (row) => formatCurrency(row.reallocation),
     difference: (row) => formatPercent(row.difference),
@@ -258,7 +264,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         </View>
 
         {sections.map(sec => {
-          const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.targetPct));
+          const sectionRows = summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.overallDollar || r.targetPct));
           const sectionTotal = getSectionTotal(summaryRows, sec.categories);
           return (
             <View key={sec.name}>
@@ -302,13 +308,21 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       postValue: (h) => formatCurrency(getPostValue(h)),
       pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
     };
-    return accounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
+    // Managed accounts first (in their current relative order), then unmanaged
+    const orderedAccounts = [
+      ...accounts.filter(a => a.managed !== false),
+      ...accounts.filter(a => a.managed === false),
+    ];
+    return orderedAccounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
       const acctTotal = getAccountTotal(acct.holdings);
+      const unmanaged = acct.managed === false;
       return (
         <Page key={acct.id} size="LETTER" style={s.page}>
           <View style={s.header}>
             <Text style={s.title}>{acct.name}</Text>
-            <Text style={s.subtitle}>Total: {formatCurrency(acctTotal)}</Text>
+            <Text style={s.subtitle}>
+              Total: {formatCurrency(acctTotal)}{unmanaged ? ' — Unmanaged' : ''}
+            </Text>
           </View>
           <View style={s.tableHeader}>
             {visCols.map(col => (
@@ -362,6 +376,8 @@ export default function PdfPanel() {
   const [includeSummaryColumns, setIncludeSummaryColumns] = useState({
     portfolioDollar: true,
     portfolioPct: true,
+    overallDollar: true,
+    overallPct: true,
     targetPct: true,
     reallocation: true,
     difference: true,
@@ -406,8 +422,9 @@ export default function PdfPanel() {
     [accounts, targetProfile, customSecurities]
   );
 
+  // Capitalization PDF page reflects managed accounts only
   const capData = useMemo(
-    () => getCapitalizationData(accounts, targetProfile),
+    () => getCapitalizationData(accounts.filter(a => a.managed !== false), targetProfile),
     [accounts, targetProfile]
   );
 
@@ -474,7 +491,7 @@ export default function PdfPanel() {
           <div className="space-y-2">
             {[
               { key: 'summary', label: 'Summary', desc: 'Household rollup table + pie chart' },
-              { key: 'capitalization', label: 'Capitalization', desc: 'Equity style breakdown (Domestic / Foreign / Combined)' },
+              { key: 'capitalization', label: 'Capitalization', desc: 'Equity style breakdown (Domestic / Foreign / Combined) — managed accounts' },
               { key: 'securities', label: 'Securities', desc: 'Per-account holdings detail' },
             ].map(({ key, label, desc }) => (
               <label key={key} className="flex items-start gap-3 cursor-pointer group">
@@ -539,6 +556,8 @@ export default function PdfPanel() {
                   {[
                     { key: 'portfolioDollar', label: 'Portfolio $' },
                     { key: 'portfolioPct', label: 'Portfolio %' },
+                    { key: 'overallDollar', label: 'Overall $' },
+                    { key: 'overallPct', label: 'Overall %' },
                     { key: 'targetPct', label: 'Target %' },
                     { key: 'reallocation', label: 'Reallocation $' },
                     { key: 'difference', label: 'Difference %' },

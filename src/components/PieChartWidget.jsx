@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { TARGET_PROFILES } from '../data/targetProfiles';
 import { getSummaryData } from '../utils/calculations';
@@ -227,15 +227,19 @@ function Pie3DChart({ data, theme }) {
 export default function PieChartWidget({ visible = true }) {
   const { accounts, assumptions, theme, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
+  const [scope, setScope] = useState('managed');
+  // Hidden PDF-capture instance always uses the managed scope
+  const effectiveScope = visible ? scope : 'managed';
 
   const { rows } = useMemo(
     () => getSummaryData(accounts, targetProfile, customSecurities),
     [accounts, targetProfile, customSecurities]
   );
 
+  const pctKey = effectiveScope === 'managed' ? 'portfolioPct' : 'overallPct';
   const pieData = rows
-    .filter(r => r.portfolioPct > 0)
-    .map(r => ({ name: r.category, value: r.portfolioPct }));
+    .filter(r => r[pctKey] > 0)
+    .map(r => ({ name: r.category, value: r[pctKey] }));
 
   return (
     <div
@@ -245,6 +249,28 @@ export default function PieChartWidget({ visible = true }) {
         : { position: 'absolute', left: '-9999px', top: 0 }
       }
     >
+      {visible && (
+        <div className="flex justify-center mb-2">
+          <div className="flex rounded border border-border overflow-hidden">
+            {[
+              { key: 'managed', label: 'Managed' },
+              { key: 'all', label: 'All accounts' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setScope(key)}
+                className={`px-3 py-1 text-xs transition-colors ${
+                  scope === key
+                    ? 'bg-steel-blue/30 text-accent font-semibold'
+                    : 'bg-dark-bg text-text-primary/60 hover:text-text-primary hover:bg-alt-bg'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {visible && <h3 className="text-center text-steel-blue text-sm mb-2">Asset Allocation</h3>}
       {pieData.length > 0 ? (
         <Pie3DChart data={pieData} theme={theme} />

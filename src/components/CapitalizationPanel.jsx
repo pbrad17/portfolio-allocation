@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { TARGET_PROFILES } from '../data/targetProfiles';
 import { getCapitalizationData } from '../utils/calculations';
@@ -130,25 +130,51 @@ function CapTable({ title, section, showZeroRows }) {
 export default function CapitalizationPanel() {
   const { accounts, assumptions, showZeroRows, setShowZeroRows } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
+  const [scope, setScope] = useState('managed');
+
+  const scopedAccounts = useMemo(
+    () => scope === 'managed' ? accounts.filter(a => a.managed !== false) : accounts,
+    [accounts, scope]
+  );
 
   const { domestic, foreign, combined } = useMemo(
-    () => getCapitalizationData(accounts, targetProfile),
-    [accounts, targetProfile]
+    () => getCapitalizationData(scopedAccounts, targetProfile),
+    [scopedAccounts, targetProfile]
   );
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold text-accent">Equity Capitalization Breakdown</h2>
-        <label className="flex items-center gap-2 text-sm text-text-primary/60">
-          <input
-            type="checkbox"
-            checked={showZeroRows}
-            onChange={e => setShowZeroRows(e.target.checked)}
-            className="accent-accent"
-          />
-          Show zero rows
-        </label>
+        <div className="flex items-center gap-4">
+          <div className="flex rounded border border-border overflow-hidden">
+            {[
+              { key: 'managed', label: 'Managed' },
+              { key: 'all', label: 'All accounts' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setScope(key)}
+                className={`px-3 py-1 text-xs transition-colors ${
+                  scope === key
+                    ? 'bg-steel-blue/30 text-accent font-semibold'
+                    : 'bg-dark-bg text-text-primary/60 hover:text-text-primary hover:bg-alt-bg'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-text-primary/60">
+            <input
+              type="checkbox"
+              checked={showZeroRows}
+              onChange={e => setShowZeroRows(e.target.checked)}
+              className="accent-accent"
+            />
+            Show zero rows
+          </label>
+        </div>
       </div>
 
       <CapTable title="Domestic Equity" section={domestic} showZeroRows={showZeroRows} />
