@@ -16,6 +16,7 @@ export default function SessionControls() {
       accounts: accounts.map(a => ({
         id: a.id,
         name: a.name,
+        sweepToCash: !!a.sweepToCash,
         holdings: a.holdings.map(h => ({
           ticker: h.ticker,
           securityName: h.securityName,

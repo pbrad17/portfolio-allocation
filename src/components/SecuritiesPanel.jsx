@@ -52,7 +52,7 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
   );
 }
 
-function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
+function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn }) {
   const {
     updateHolding, removeHolding, moveHolding,
     customSecurities, addCustomSecurity, updateCustomSecurity,
@@ -288,11 +288,20 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
         />
       </td>
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(mv)}</td>
-      <td className="px-2 py-1">
+      <td
+        className="px-2 py-1"
+        title={sweepOn && holding.ticker === '$$$$'
+          ? 'Auto-swept: offsets the other proposed changes in this account. Editing this value turns the sweep off.'
+          : undefined}
+      >
         <NumericInput
           value={holding.proposedChange}
           onChange={v => updateHolding(accountId, holding.id, 'proposedChange', v)}
-          className="w-28 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
+          className={`w-28 border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent ${
+            sweepOn && holding.ticker === '$$$$'
+              ? 'bg-accent/10 border-accent/40 italic'
+              : 'bg-input-teal/20 border-border'
+          }`}
           placeholder="0.00"
         />
       </td>
@@ -343,10 +352,13 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
 }
 
 function AccountTab({ account }) {
-  const { addHolding, renameAccount, removeAccount, accounts } = useAppContext();
+  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep } = useAppContext();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(account.name);
   const accountTotal = getAccountTotal(account.holdings);
+  const marketTotal = account.holdings.reduce((s, h) => s + getMarketValue(h), 0);
+  const changeTotal = account.holdings.reduce((s, h) => s + (h.proposedChange || 0), 0);
+  const isBalanced = Math.abs(changeTotal) < 0.005;
 
   const saveName = () => {
     renameAccount(account.id, editName || account.name);
@@ -377,6 +389,18 @@ function AccountTab({ account }) {
         <span className="text-steel-blue text-sm">
           Total: {formatCurrency(accountTotal)}
         </span>
+        <label
+          className="flex items-center gap-1.5 text-sm text-text-primary/60 cursor-pointer"
+          title="When on, the account's $$$$ cash row automatically offsets all other proposed changes — sells add to cash, buys draw it down. Editing the cash row's change manually turns the sweep off."
+        >
+          <input
+            type="checkbox"
+            checked={!!account.sweepToCash}
+            onChange={() => toggleSweep(account.id)}
+            className="accent-accent"
+          />
+          Sweep to cash
+        </label>
         {accounts.length > 1 && (
           <button
             onClick={() => removeAccount(account.id)}
@@ -406,14 +430,20 @@ function AccountTab({ account }) {
                 accountTotal={accountTotal}
                 isFirst={idx === 0}
                 isLast={idx === account.holdings.length - 1}
+                sweepOn={!!account.sweepToCash}
               />
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-accent bg-dark-bg font-semibold">
               <td colSpan={5} className="px-2 py-2 text-accent">Account Total</td>
-              <td className="px-2 py-2 text-right">{formatCurrency(accountTotal)}</td>
-              <td></td>
+              <td className="px-2 py-2 text-right">{formatCurrency(marketTotal)}</td>
+              <td
+                className={`px-2 py-2 text-right ${isBalanced ? 'text-positive' : 'text-accent'}`}
+                title={isBalanced ? 'Net proposed change is zero — fully rebalanced' : 'Net proposed change — money entering (+) or leaving (−) the account'}
+              >
+                {formatCurrency(changeTotal)}
+              </td>
               <td className="px-2 py-2 text-right">{formatCurrency(accountTotal)}</td>
               <td className="px-2 py-2 text-right">100.0%</td>
               <td></td>

@@ -38,6 +38,26 @@ function createEmptyAccount(id, name) {
   };
 }
 
+const SWEEP_TICKER = '$$$$';
+
+// When "Sweep to cash" is on, the account's $$$$ row absorbs the negative of
+// all other proposed changes: sells fund cash, buys draw it down, and the
+// account's net proposed change stays at zero.
+function applySweep(account) {
+  if (!account.sweepToCash) return account;
+  const cashIdx = account.holdings.findIndex(h => h.ticker === SWEEP_TICKER);
+  if (cashIdx === -1) return account;
+  const net = account.holdings.reduce(
+    (s, h, i) => (i === cashIdx ? s : s + (h.proposedChange || 0)),
+    0
+  );
+  const cash = account.holdings[cashIdx];
+  if ((cash.proposedChange || 0) === -net) return account;
+  const holdings = [...account.holdings];
+  holdings[cashIdx] = { ...cash, proposedChange: -net };
+  return { ...account, holdings };
+}
+
 export function AppProvider({ children }) {
   const [assumptions, setAssumptions] = useState({
     clientName: '',
@@ -271,12 +291,24 @@ export function AppProvider({ children }) {
     setAccounts(prev =>
       prev.map(a => {
         if (a.id !== accountId) return a;
-        return {
+        let next = {
           ...a,
           holdings: a.holdings.map(h =>
             h.id === holdingId ? { ...h, [field]: value } : h
           ),
         };
+        if (a.sweepToCash && field === 'proposedChange') {
+          const edited = a.holdings.find(h => h.id === holdingId);
+          if (edited?.ticker === SWEEP_TICKER) {
+            // Manually editing the cash row's change turns the sweep off
+            next = { ...next, sweepToCash: false };
+          } else {
+            next = applySweep(next);
+          }
+        } else if (a.sweepToCash && field === 'ticker') {
+          next = applySweep(next);
+        }
+        return next;
       })
     );
   }, []);
@@ -294,7 +326,27 @@ export function AppProvider({ children }) {
     setAccounts(prev =>
       prev.map(a => {
         if (a.id !== accountId) return a;
-        return { ...a, holdings: a.holdings.filter(h => h.id !== holdingId) };
+        return applySweep({ ...a, holdings: a.holdings.filter(h => h.id !== holdingId) });
+      })
+    );
+  }, []);
+
+  const toggleSweep = useCallback((accountId) => {
+    setAccounts(prev =>
+      prev.map(a => {
+        if (a.id !== accountId) return a;
+        if (a.sweepToCash) return { ...a, sweepToCash: false };
+        let next = { ...a, sweepToCash: true };
+        if (!next.holdings.some(h => h.ticker === SWEEP_TICKER)) {
+          next = {
+            ...next,
+            holdings: [
+              { ...createEmptyHolding(), ticker: SWEEP_TICKER, securityName: 'Cash', style: 'Cash', quantity: 0, price: 1 },
+              ...next.holdings,
+            ],
+          };
+        }
+        return applySweep(next);
       })
     );
   }, []);
@@ -444,7 +496,7 @@ export function AppProvider({ children }) {
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,
     addAccount, removeAccount, renameAccount, moveAccount,
-    updateHolding, addHolding, removeHolding, moveHolding,
+    updateHolding, addHolding, removeHolding, moveHolding, toggleSweep,
     loadSession,
     priceDate, priceLoading, refreshPrices,
   };
