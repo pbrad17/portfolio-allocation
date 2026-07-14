@@ -1,4 +1,4 @@
-import { matchCategory, isEmergingCountry } from '../src/data/categoryMap.js';
+import { matchCategory, isEmergingCountry, classifyFundByName } from '../src/data/categoryMap.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -47,7 +47,7 @@ async function fetchChartMeta(symbol) {
 }
 
 async function fetchQuoteSummary(symbol) {
-  const modules = 'fundProfile,summaryDetail,defaultKeyStatistics,summaryProfile,quoteType';
+  const modules = 'fundProfile,summaryDetail,defaultKeyStatistics,summaryProfile,quoteType,topHoldings';
 
   const doFetch = async ({ cookie, crumb }) => {
     const url =
@@ -139,7 +139,7 @@ function classifyEquity(meta, summary) {
   };
 }
 
-function classify(meta, summary) {
+function classify(meta, summary, name) {
   const instrumentType = meta.instrumentType;
 
   if (instrumentType === 'MONEYMARKET') {
@@ -157,7 +157,36 @@ function classify(meta, summary) {
         ...(match.reason ? { reason: match.reason } : {}),
       };
     }
-    // Unknown / missing Morningstar category — leave style blank for the advisor
+
+    // No Morningstar category on Yahoo (common for new ETFs, e.g. FSTB).
+    // Fall back to the fund's own name, sanity-checked against the fund's
+    // stock/bond asset split when Yahoo provides one.
+    const byName = classifyFundByName(name);
+    const th = summary?.topHoldings || {};
+    const bondPos = raw(th.bondPosition);
+    const stockPos = raw(th.stockPosition);
+
+    if (byName) {
+      const BOND_STYLES = ['Investment Grade', 'TIPS', 'Foreign Bonds', 'High Yield', 'Multisector Bonds', 'Cash'];
+      const nameSaysBond = BOND_STYLES.includes(byName.style);
+      // Contradiction between name and actual holdings → don't guess
+      const contradicts =
+        (nameSaysBond && stockPos != null && stockPos > 0.7) ||
+        (!nameSaysBond && byName.style && bondPos != null && bondPos > 0.7);
+      if (!contradicts) {
+        return { ...byName, category: categoryName };
+      }
+    }
+
+    // Name gave no signal — classify by asset split alone at review confidence
+    if (bondPos != null && bondPos > 0.7) {
+      return { style: 'Investment Grade', category: null, confidence: 'review', reason: 'asset-split' };
+    }
+    if (stockPos != null && stockPos > 0.7) {
+      return { style: 'Domestic Large Blend', category: null, confidence: 'review', reason: 'asset-split' };
+    }
+
+    // Truly unknown — leave style blank for the advisor
     return { style: null, category: categoryName, confidence: 'review' };
   }
 
@@ -182,11 +211,12 @@ async function lookupSymbol(symbol) {
     // Classification degrades gracefully without quoteSummary data
   }
 
-  const { style, category, confidence, reason, country } = classify(meta, summary);
   const quoteType = summary?.quoteType || {};
+  const name = quoteType.longName || quoteType.shortName || meta.longName || meta.shortName || symbol;
+  const { style, category, confidence, reason, country } = classify(meta, summary, name);
 
   return {
-    name: quoteType.longName || quoteType.shortName || meta.longName || meta.shortName || symbol,
+    name,
     price: meta.regularMarketPrice,
     style,
     category,

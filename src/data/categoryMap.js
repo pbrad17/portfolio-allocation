@@ -159,6 +159,52 @@ const REGEX_FALLBACKS = [
   { pattern: /Foreign|World|Global|International/i, result: { style: 'Foreign Large Blend', confidence: 'review' } },
 ];
 
+// Fallback classifier for funds/ETFs where Yahoo carries no Morningstar
+// category (common for newly launched ETFs, e.g. FSTB). Reads the fund's own
+// name. Always returns confidence 'review' (or 'manual' for composites) so the
+// advisor confirms via the unverified dot. Returns null when the name gives no
+// signal.
+const NAME_RULES = [
+  { re: /money market/i,                                            style: 'Cash' },
+  { re: /target[ -]?(retirement|date)|retirement 20\d\d|freedom (index )?20\d\d|20\d\d (fund|index)/i, style: null, manual: true },
+  { re: /inflation[ -]?protected|\btips\b/i,                        style: 'TIPS' },
+  { re: /high[ -]?yield/i,                                          style: 'High Yield' },
+  { re: /floating rate|bank loan|senior loan/i,                     style: 'High Yield' },
+  { re: /\bmuni(cipal)?\b/i,                                        style: 'Investment Grade' },
+  { re: /emerging market/i,                                         style: 'Emerging Markets' },
+  { re: /(international|foreign|world|global|ex[ -]?us|eafe).*(bond|fixed income|debt)|(bond|fixed income).*(international|global|world)/i, style: 'Foreign Bonds' },
+  { re: /(short|ultra ?short|intermediate|long)[ -]?(term|duration)?[ -]?(bond|fixed income|treasury|government|corporate)|(core|total|aggregate|corporate|government|investment[ -]?grade|securitized) (bond|fixed income)|bond (fund|etf|index|market)/i, style: 'Investment Grade' },
+  { re: /real estate|\breit\b/i,                                    style: 'Real Estate' },
+  { re: /commodit|\bgold\b|\bsilver\b|precious metals/i,            style: 'Commodities' },
+  { re: /covered call|buffer|hedged equity|managed futures|market neutral|long[ -\/]?short|merger|arbitrage|defined outcome/i, style: 'Hedge Funds' },
+  { re: /\bmlp\b|midstream|energy infrastructure/i,                 style: 'Midstream Energy' },
+];
+
+const EQUITY_SIGNAL = /stock|equity|shares|\b500\b|1000|2000|3000|total market|index|dividend|value|growth|small|mid|large|cap|market|momentum|quality|min(imum)? vol|msci|eafe|acwi|russell|ftse/i;
+
+export function classifyFundByName(name) {
+  if (!name || typeof name !== 'string') return null;
+
+  for (const rule of NAME_RULES) {
+    if (rule.re.test(name)) {
+      return rule.manual
+        ? { style: null, confidence: 'manual', reason: 'composite' }
+        : { style: rule.style, confidence: 'review', reason: 'name-heuristic' };
+    }
+  }
+
+  // Equity fund: infer region / size / value-growth from the name
+  if (EQUITY_SIGNAL.test(name)) {
+    const foreign = /international|foreign|world ex[ -]?us|ex[ -]?us|eafe|europe|japan|pacific|developed markets/i.test(name);
+    const region = foreign ? 'Foreign' : 'Domestic';
+    const size = /small|\b2000\b|micro/i.test(name) ? 'Small' : /\bmid\b|mid[ -]?cap|\b400\b/i.test(name) ? 'Mid' : 'Large';
+    const vg = /value/i.test(name) ? 'Value' : /growth/i.test(name) ? 'Growth' : 'Blend';
+    return { style: `${region} ${size} ${vg}`, confidence: 'review', reason: 'name-heuristic' };
+  }
+
+  return null;
+}
+
 // Look up a Morningstar category name. Returns { style, confidence, reason? }
 // or null if the category is unrecognized. style === null with confidence
 // 'manual' means composite — must be set up as a Custom Security.
