@@ -5,6 +5,7 @@ import SecuritiesPanel from './components/SecuritiesPanel';
 import SummaryPanel from './components/SummaryPanel';
 import CapitalizationPanel from './components/CapitalizationPanel';
 import PdfPanel from './components/PdfPanel';
+import DatabasePanel from './components/DatabasePanel';
 import SessionControls from './components/SessionControls';
 import PieChartWidget from './components/PieChartWidget';
 
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'summary', label: 'Summary' },
   { id: 'capitalization', label: 'Capitalization' },
   { id: 'pdf', label: 'PDF Report' },
+  { id: 'database', label: 'Database' },
 ];
 
 function ThemeToggle() {
@@ -116,6 +118,7 @@ function AppContent() {
         {activeTab === 'summary' && <SummaryPanel />}
         {activeTab === 'capitalization' && <CapitalizationPanel />}
         {activeTab === 'pdf' && <PdfPanel />}
+        {activeTab === 'database' && <DatabasePanel />}
       </div>
 
       {/* Hidden pie chart for PDF capture (always in DOM) */}

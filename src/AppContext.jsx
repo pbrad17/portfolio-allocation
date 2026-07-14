@@ -1,7 +1,20 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { TICKER_DB } from './data/tickerDb';
+import { nameSimilarity, SIMILARITY_THRESHOLD } from './utils/nameSimilarity';
 
 const AppContext = createContext();
+
+// Audit dismissals — keys like `${ticker}|${field}|${liveValue}` for
+// discrepancies the advisor reviewed and chose to keep as-is. Stored in
+// localStorage so the same mismatch doesn't re-alert on every refresh
+// (a different live value for the same ticker will alert again).
+function readDismissals() {
+  try {
+    return JSON.parse(localStorage.getItem('bp-audit-dismissals')) || [];
+  } catch {
+    return [];
+  }
+}
 
 let holdingIdCounter = 1;
 
@@ -46,6 +59,8 @@ export function AppProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('bp-theme') || 'light');
   const [priceDate, setPriceDate] = useState('March 4, 2026');
   const [priceLoading, setPriceLoading] = useState(false);
+  // Tier-1 name alerts from price refresh: { TICKER: liveName }. Not persisted.
+  const [nameAlerts, setNameAlerts] = useState({});
   const hasFetchedPrices = useRef(false);
 
   useEffect(() => {
@@ -68,6 +83,8 @@ export function AppProvider({ children }) {
   useEffect(() => { resolvedRef.current = resolvedSecurities; }, [resolvedSecurities]);
   const customRef = useRef(customSecurities);
   useEffect(() => { customRef.current = customSecurities; }, [customSecurities]);
+  const nameAlertsRef = useRef(nameAlerts);
+  useEffect(() => { nameAlertsRef.current = nameAlerts; }, [nameAlerts]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -96,7 +113,8 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Resolve a ticker: custom securities → static DB → previously resolved →
+  // Resolve a ticker: custom securities → resolved overrides (audit-accepted
+  // corrections win over the static DB) → static DB → previously resolved →
   // live /api/lookup (Yahoo + Morningstar category classification).
   // Returns { source, ...info } or null if the ticker can't be found.
   const resolveTicker = useCallback(async (ticker) => {
@@ -106,10 +124,12 @@ export function AppProvider({ children }) {
     const cs = customRef.current[t];
     if (cs) return { source: 'custom', name: cs.name };
 
+    const resolved = resolvedRef.current[t];
+    if (resolved?.override) return { source: 'override', ...resolved };
+
     const dbEntry = TICKER_DB[t];
     if (dbEntry) return { source: 'db', ...dbEntry };
 
-    const resolved = resolvedRef.current[t];
     if (resolved) return { source: 'resolved', ...resolved };
 
     try {
@@ -157,6 +177,66 @@ export function AppProvider({ children }) {
       return { ...prev, [t]: { ...existing, ...updates } };
     });
   }, []);
+
+  // Upsert an audit-accepted correction. Override entries win over TICKER_DB
+  // when resolving tickers, and are what "Export DB Patch" serializes.
+  const setDbOverride = useCallback((ticker, updates) => {
+    const t = ticker?.toUpperCase().trim();
+    if (!t) return;
+    setResolvedSecurities(prev => {
+      const existing = prev[t] || {};
+      const base = TICKER_DB[t] || {};
+      return {
+        ...prev,
+        [t]: {
+          name: base.name || null,
+          style: base.style || null,
+          price: base.price ?? null,
+          ...existing,
+          ...updates,
+          override: true,
+          verified: true,
+        },
+      };
+    });
+  }, []);
+
+  // Delete an override entry entirely (reverts the ticker to TICKER_DB).
+  const removeResolved = useCallback((ticker) => {
+    const t = ticker?.toUpperCase().trim();
+    setResolvedSecurities(prev => {
+      if (!prev[t]) return prev;
+      const next = { ...prev };
+      delete next[t];
+      return next;
+    });
+  }, []);
+
+  const isDismissed = useCallback((key) => readDismissals().includes(key), []);
+
+  const addDismissal = useCallback((key) => {
+    const list = readDismissals();
+    if (list.includes(key)) return;
+    list.push(key);
+    try {
+      localStorage.setItem('bp-audit-dismissals', JSON.stringify(list));
+    } catch {
+      // localStorage unavailable or full — dismissal just won't persist
+    }
+  }, []);
+
+  const dismissNameAlert = useCallback((ticker) => {
+    const t = ticker?.toUpperCase().trim();
+    const liveName = nameAlertsRef.current[t];
+    if (liveName == null) return;
+    addDismissal(`${t}|name|${liveName}`);
+    setNameAlerts(prev => {
+      if (!(t in prev)) return prev;
+      const next = { ...prev };
+      delete next[t];
+      return next;
+    });
+  }, [addDismissal]);
 
   const addAccount = useCallback(() => {
     setAccounts(prev => {
@@ -291,6 +371,25 @@ export function AppProvider({ children }) {
         }
       }
 
+      // Tier-1 name audit: flag tickers whose live Yahoo name doesn't look
+      // like the stored name (override → TICKER_DB → resolved). Previously
+      // dismissed mismatches (same ticker + same live name) stay quiet.
+      const dismissals = readDismissals();
+      const newAlerts = {};
+      for (const [symbol, data] of Object.entries(priceMap)) {
+        if (!data.name) continue;
+        const resolved = resolvedRef.current[symbol];
+        const storedName = resolved?.override
+          ? resolved.name
+          : (TICKER_DB[symbol]?.name || resolved?.name);
+        if (!storedName) continue;
+        if (dismissals.includes(`${symbol}|name|${data.name}`)) continue;
+        if (nameSimilarity(storedName, data.name) < SIMILARITY_THRESHOLD) {
+          newAlerts[symbol] = data.name;
+        }
+      }
+      setNameAlerts(prev => ({ ...prev, ...newAlerts }));
+
       // Update prices in resolved securities
       setResolvedSecurities(prev => {
         let changed = false;
@@ -338,6 +437,9 @@ export function AppProvider({ children }) {
     customSecurities, setCustomSecurities,
     addCustomSecurity, updateCustomSecurity, removeCustomSecurity,
     resolvedSecurities, resolveTicker, verifyResolved, updateResolved,
+    setDbOverride, removeResolved,
+    nameAlerts, dismissNameAlert,
+    isDismissed, addDismissal,
     activeTab, setActiveTab,
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,

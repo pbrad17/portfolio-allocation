@@ -103,7 +103,10 @@ function classifyEquity(meta, summary) {
     };
   }
 
-  const isDomestic = meta.currency === 'USD' && country === 'United States';
+  // Missing country + USD trading currency → assume Domestic (review
+  // confidence surfaces it as unverified). Yahoo intermittently omits
+  // summaryProfile.country even for large US names (e.g. BAC).
+  const isDomestic = meta.currency === 'USD' && (country === 'United States' || !country);
   const region = isDomestic ? 'Domestic' : 'Foreign';
 
   const marketCap = raw(summaryDetail.marketCap);

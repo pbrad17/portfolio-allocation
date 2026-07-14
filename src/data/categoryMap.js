@@ -47,9 +47,9 @@ export const CATEGORY_TO_STYLE = {
   'Foreign Large Value':      { style: 'Foreign Large Value',  confidence: 'high' },
   'Foreign Large Blend':      { style: 'Foreign Large Blend',  confidence: 'high' },
   'Foreign Large Growth':     { style: 'Foreign Large Growth', confidence: 'high' },
-  'Foreign Small/Mid Value':  { style: 'Foreign Mid Value',    confidence: 'high' },
-  'Foreign Small/Mid Blend':  { style: 'Foreign Mid Blend',    confidence: 'high' },
-  'Foreign Small/Mid Growth': { style: 'Foreign Mid Growth',   confidence: 'high' },
+  'Foreign Small/Mid Value':  { style: 'Foreign Small Value',  confidence: 'high' },
+  'Foreign Small/Mid Blend':  { style: 'Foreign Small Blend',  confidence: 'high' },
+  'Foreign Small/Mid Growth': { style: 'Foreign Small Growth', confidence: 'high' },
   'World Large-Stock Blend':  { style: 'Foreign Large Blend',  confidence: 'review' },
   'World Large-Stock Growth': { style: 'Foreign Large Growth', confidence: 'review' },
   'World Large-Stock Value':  { style: 'Foreign Large Value',  confidence: 'review' },
@@ -87,7 +87,10 @@ export const CATEGORY_TO_STYLE = {
   'Intermediate Core Bond':      { style: 'Investment Grade', confidence: 'high' },
   'Intermediate Core-Plus Bond': { style: 'Investment Grade', confidence: 'high' },
   'Short-Term Bond':             { style: 'Investment Grade', confidence: 'high' },
-  'Ultrashort Bond':             { style: 'Investment Grade', confidence: 'high' },
+  // Advisor convention: T-bill / ultrashort ETFs (BIL, SGOV, SHV, JPST, MINT)
+  // are treated as cash equivalents — flag for review since some ultrashort
+  // funds take modest credit risk.
+  'Ultrashort Bond':             { style: 'Cash', confidence: 'review' },
   'Long-Term Bond':              { style: 'Investment Grade', confidence: 'high' },
   'Corporate Bond':              { style: 'Investment Grade', confidence: 'high' },
   'Long Government':             { style: 'Investment Grade', confidence: 'high' },

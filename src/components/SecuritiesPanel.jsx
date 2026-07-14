@@ -57,6 +57,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
     updateHolding, removeHolding, moveHolding,
     customSecurities, addCustomSecurity, updateCustomSecurity,
     resolvedSecurities, resolveTicker, verifyResolved,
+    nameAlerts, dismissNameAlert, setDbOverride,
   } = useAppContext();
   const [notFound, setNotFound] = useState(false);
   const [lookupState, setLookupState] = useState(null); // null | 'loading' | 'composite'
@@ -68,11 +69,30 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
   const isCustomStyle = holding.style?.startsWith('Custom: ');
   const resolvedEntry = ticker ? resolvedSecurities[ticker] : null;
   const showUnverified = !!resolvedEntry && !resolvedEntry.verified && !notFound && lookupState !== 'loading';
+  const nameAlertLiveName = ticker ? nameAlerts?.[ticker] : undefined;
 
   const handleVerify = () => {
     verifyResolved(ticker);
     setJustVerified(true);
     setTimeout(() => setJustVerified(false), 1500);
+  };
+
+  const handleNameAlert = (e) => {
+    if (e.shiftKey) {
+      // Shift+Click: dismiss without applying — this exact mismatch stays quiet
+      dismissNameAlert(ticker);
+      return;
+    }
+    const apply = window.confirm(
+      `Yahoo reports "${nameAlertLiveName}" for ${ticker}.\n\n` +
+      `OK — apply the live name (updates this holding and stores a database override).\n` +
+      `Cancel — leave everything as-is.`
+    );
+    if (apply) {
+      updateHolding(accountId, holding.id, 'securityName', nameAlertLiveName);
+      setDbOverride(ticker, { name: nameAlertLiveName });
+      dismissNameAlert(ticker);
+    }
   };
 
   // Determine if the "save to custom" button should show
@@ -123,6 +143,14 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
       updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
       return;
     }
+    const known = resolvedSecurities[ticker];
+    if (known?.override) {
+      // Audit-accepted override wins over the static DB
+      if (known.name != null) updateHolding(accountId, holding.id, 'securityName', known.name);
+      if (known.style != null) updateHolding(accountId, holding.id, 'style', known.style);
+      if (known.price != null) updateHolding(accountId, holding.id, 'price', known.price);
+      return;
+    }
     const info = TICKER_DB[ticker];
     if (info) {
       updateHolding(accountId, holding.id, 'securityName', info.name);
@@ -130,7 +158,6 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
       updateHolding(accountId, holding.id, 'price', info.price);
       return;
     }
-    const known = resolvedSecurities[ticker];
     if (known) {
       updateHolding(accountId, holding.id, 'securityName', known.name);
       updateHolding(accountId, holding.id, 'style', known.style);
@@ -203,6 +230,13 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast }) {
             <span
               className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-positive"
               title="Classification confirmed"
+            />
+          )}
+          {nameAlertLiveName != null && (
+            <button
+              onClick={handleNameAlert}
+              className="absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full bg-negative hover:opacity-75 cursor-pointer"
+              title={`Name mismatch: Yahoo reports "${nameAlertLiveName}" for this ticker — verify the security. Click to review/apply; Shift+Click to dismiss.`}
             />
           )}
         </div>
