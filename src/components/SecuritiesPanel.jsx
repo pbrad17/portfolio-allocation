@@ -52,6 +52,19 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
   );
 }
 
+const HOLDING_COLS = [
+  { label: 'Ticker',          width: '7%',  align: 'left' },
+  { label: 'Security Name',   width: '19%', align: 'left' },
+  { label: 'Investment Style', width: '14%', align: 'left' },
+  { label: 'Quantity',        width: '9%',  align: 'right' },
+  { label: 'Price',           width: '8%',  align: 'right' },
+  { label: 'Market Value',    width: '10%', align: 'right' },
+  { label: 'Proposed Change', width: '11%', align: 'right' },
+  { label: 'Post Value',      width: '10%', align: 'right' },
+  { label: '% of Acct',       width: '6%',  align: 'right' },
+  { label: '',                width: '6%',  align: 'left' },
+];
+
 function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn }) {
   const {
     updateHolding, removeHolding, moveHolding,
@@ -199,7 +212,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
             onChange={e => updateHolding(accountId, holding.id, 'ticker', e.target.value)}
             onBlur={handleTickerBlur}
             onKeyDown={handleKeyDown}
-            className="w-20 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm focus:outline-none focus:border-accent"
+            className="w-full bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm focus:outline-none focus:border-accent"
             placeholder="Ticker"
           />
           {lookupState === 'loading' && (
@@ -254,7 +267,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
         <select
           value={holding.style}
           onChange={e => updateHolding(accountId, holding.id, 'style', e.target.value)}
-          className="w-44 bg-dark-bg border border-border text-text-primary px-1 py-1 rounded text-xs focus:outline-none focus:border-accent"
+          className="w-full bg-dark-bg border border-border text-text-primary px-1 py-1 rounded text-xs focus:outline-none focus:border-accent"
         >
           <option value="">Select style...</option>
           {STYLE_OPTIONS.map(s => (
@@ -275,7 +288,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
         <NumericInput
           value={holding.quantity}
           onChange={v => updateHolding(accountId, holding.id, 'quantity', v)}
-          className="w-24 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
+          className="w-full bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
           placeholder="0.00"
         />
       </td>
@@ -283,7 +296,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
         <NumericInput
           value={holding.price}
           onChange={v => updateHolding(accountId, holding.id, 'price', v)}
-          className="w-24 bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
+          className="w-full bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
           placeholder="0.00"
         />
       </td>
@@ -297,7 +310,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
         <NumericInput
           value={holding.proposedChange}
           onChange={v => updateHolding(accountId, holding.id, 'proposedChange', v)}
-          className={`w-28 border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent ${
+          className={`w-full border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent ${
             sweepOn && holding.ticker === '$$$$'
               ? 'bg-accent/10 border-accent/40 italic'
               : 'bg-input-teal/20 border-border'
@@ -413,11 +426,16 @@ function AccountTab({ account }) {
 
       {/* Holdings table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[1080px] text-sm" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            {HOLDING_COLS.map(col => (
+              <col key={col.label || 'actions'} style={{ width: col.width }} />
+            ))}
+          </colgroup>
           <thead>
             <tr className="bg-header-bg">
-              {['Ticker', 'Security Name', 'Investment Style', 'Quantity', 'Price', 'Market Value', 'Proposed Change', 'Post Value', '% of Acct', ''].map(h => (
-                <th key={h} className="px-2 py-2 text-left text-xs font-medium text-text-primary/90 whitespace-nowrap">{h}</th>
+              {HOLDING_COLS.map(col => (
+                <th key={col.label || 'actions'} className={`px-2 py-2 text-xs font-medium text-text-primary/90 whitespace-nowrap text-${col.align}`}>{col.label}</th>
               ))}
             </tr>
           </thead>
