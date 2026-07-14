@@ -56,7 +56,7 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 // absorbs the remaining table width.
 const HOLDING_COLS = [
   { label: 'Ticker',          width: '100px', align: 'left' },
-  { label: 'Security Name',   width: undefined, align: 'left' },
+  { label: 'Security Name',   width: '280px', align: 'left' },
   { label: 'Investment Style', width: '196px', align: 'left' },
   { label: 'Quantity',        width: '112px', align: 'right' },
   { label: 'Price',           width: '112px', align: 'right' },
@@ -110,12 +110,15 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
     }
   };
 
-  // Determine if the "save to custom" button should show
-  const canSaveCustom = (() => {
-    if (!ticker || !holding.securityName || !holding.style) return false;
+  // The sparkle shows on every complete row: bright when there's something to
+  // save (unknown ticker, or modified name/style), dimmed when the row matches
+  // the database (clicking converts it to a custom security anyway).
+  const rowComplete = !!(ticker && holding.securityName && holding.style);
+  const hasUnsavedCustom = (() => {
+    if (!rowComplete) return false;
     if (isCustomStyle) {
-      // Already saved as custom — show button if name was edited since last save
-      return csEntry && holding.securityName !== csEntry.name;
+      // Already saved as custom — highlight if name was edited since last save
+      return !!csEntry && holding.securityName !== csEntry.name;
     }
     if (!dbEntry) {
       // Unknown ticker with name and style filled in
@@ -324,11 +327,13 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
       <td className="px-2 py-1 text-sm text-right">{formatPercent(pctOfAccount)}</td>
       <td className="px-2 py-1">
         <div className="flex items-center gap-2.5">
-          {canSaveCustom && (
+          {rowComplete && (
             <button
               onClick={handleSaveCustom}
-              className="text-accent/70 hover:text-accent text-sm leading-none"
-              title="Save to custom securities"
+              className={`text-sm leading-none ${hasUnsavedCustom ? 'text-accent/80 hover:text-accent' : 'text-accent/25 hover:text-accent/70'}`}
+              title={hasUnsavedCustom
+                ? 'Save to custom securities'
+                : 'Convert to a custom security (edit its multi-asset allocations on the Assumptions tab)'}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                 <path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.784l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .784.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.784l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.183a1 1 0 0 1 .633.633l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.633l.551-.183a1 1 0 0 0 0-1.898l-.551-.184a1 1 0 0 1-.633-.632l-.183-.551Z" />
@@ -428,10 +433,10 @@ function AccountTab({ account }) {
 
       {/* Holdings table */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1280px] text-sm" style={{ tableLayout: 'fixed' }}>
+        <table className="text-sm" style={{ tableLayout: 'fixed', width: 'max-content' }}>
           <colgroup>
             {HOLDING_COLS.map(col => (
-              <col key={col.label || 'actions'} style={col.width ? { width: col.width } : undefined} />
+              <col key={col.label || 'actions'} style={{ width: col.width }} />
             ))}
           </colgroup>
           <thead>
