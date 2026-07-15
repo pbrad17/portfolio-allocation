@@ -247,14 +247,20 @@ function extractExpenseRatio(meta, summary) {
     }
   }
 
-  // All sources were 0 (or absent with at least one 0) — genuinely zero-fee
-  if (zeroCandidate != null) {
+  // All sources were 0. A true 0.00% expense ratio is extremely rare (Fidelity
+  // ZERO index funds); far more often an all-zero result means Yahoo simply
+  // lacks fee data for the fund (verified with BAGIX: real net ER 0.30%,
+  // Yahoo reports 0). Accuracy first: report no-data unless whitelisted.
+  if (zeroCandidate != null && ZERO_FEE_FUNDS.has(meta.symbol?.toUpperCase())) {
     return toResult(zeroCandidate, 0);
   }
 
-  // Fund type but no expense data — the client lists these as excluded
+  // Fund type but no usable expense data — the client lists these as excluded
   return {};
 }
+
+// Funds with a genuine 0.00% expense ratio (Fidelity ZERO index family).
+const ZERO_FEE_FUNDS = new Set(['FNILX', 'FZROX', 'FZILX', 'FZIPX']);
 
 async function lookupSymbol(symbol) {
   const meta = await fetchChartMeta(symbol);
