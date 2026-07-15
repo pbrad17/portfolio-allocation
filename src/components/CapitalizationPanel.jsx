@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { TARGET_PROFILES } from '../data/targetProfiles';
 import { getCapitalizationData } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
+import ColumnsPopover, { loadColumnState, saveColumnState } from './ColumnsPopover';
 
 const CAP_GROUPS = [
   { label: 'Large', indices: [0, 1] },
@@ -10,16 +11,28 @@ const CAP_GROUPS = [
   { label: 'Small', indices: [4, 5] },
 ];
 
+// Widths are relative weights (out of 100 when all columns are visible);
+// they are proportionally renormalized across whichever columns are visible.
 const COLUMNS = [
-  { key: 'style',         label: 'Style',        width: '18%', align: 'left',  fmt: (r) => r.style },
-  { key: 'currentDollar', label: 'Current $',     width: '12%', align: 'right', fmt: (r) => formatCurrency(r.currentDollar) },
-  { key: 'currentPct',    label: 'Current %',     width: '11%', align: 'right', fmt: (r) => formatPercent(r.currentPct) },
-  { key: 'changeDollar',  label: 'Change $',      width: '12%', align: 'right', fmt: (r) => formatCurrency(r.changeDollar) },
-  { key: 'postDollar',    label: 'Post $',        width: '12%', align: 'right', fmt: (r) => formatCurrency(r.postDollar) },
-  { key: 'postPct',       label: 'Post %',        width: '11%', align: 'right', fmt: (r) => formatPercent(r.postPct) },
-  { key: 'targetPct',     label: 'Target %',      width: '11%', align: 'right', fmt: (r) => formatPercent(r.targetPct) },
-  { key: 'difference',    label: 'Difference %',  width: '13%', align: 'right', fmt: (r) => formatPercent(r.difference) },
+  { key: 'style',         label: 'Style',        width: 18, align: 'left',  fmt: (r) => r.style },
+  { key: 'currentDollar', label: 'Current $',     width: 12, align: 'right', fmt: (r) => formatCurrency(r.currentDollar) },
+  { key: 'currentPct',    label: 'Current %',     width: 11, align: 'right', fmt: (r) => formatPercent(r.currentPct) },
+  { key: 'changeDollar',  label: 'Change $',      width: 12, align: 'right', fmt: (r) => formatCurrency(r.changeDollar) },
+  { key: 'postDollar',    label: 'Post $',        width: 12, align: 'right', fmt: (r) => formatCurrency(r.postDollar) },
+  { key: 'postPct',       label: 'Post %',        width: 11, align: 'right', fmt: (r) => formatPercent(r.postPct) },
+  { key: 'targetPct',     label: 'Target %',      width: 11, align: 'right', fmt: (r) => formatPercent(r.targetPct) },
+  { key: 'difference',    label: 'Difference %',  width: 13, align: 'right', fmt: (r) => formatPercent(r.difference) },
 ];
+const TOGGLEABLE_KEYS = COLUMNS.filter(c => c.key !== 'style').map(c => c.key);
+const STORAGE_KEY = 'bp-cap-columns';
+
+// Same proportional re-spread as PdfPanel's getVisibleCapCols: hidden columns'
+// width is redistributed across the visible ones.
+function getVisibleColumns(hidden) {
+  const visible = COLUMNS.filter(c => c.key === 'style' || !hidden.includes(c.key));
+  const totalW = visible.reduce((s, c) => s + c.width, 0);
+  return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
+}
 
 function diffColorClass(value) {
   if (value > 0.0001) return 'text-positive';
@@ -45,22 +58,22 @@ function sumGroup(rows, indices) {
   );
 }
 
-function CapTable({ title, section, showZeroRows }) {
+function CapTable({ title, section, showZeroRows, columns }) {
   const allRows = section.rows;
-  const numCols = COLUMNS.length;
+  const numCols = columns.length;
 
   return (
     <div className="mb-8">
       <h3 className="text-lg font-semibold text-accent mb-2 border-b border-steel-blue pb-1">{title}</h3>
       <table className="w-full" style={{ tableLayout: 'fixed' }}>
         <colgroup>
-          {COLUMNS.map(col => (
+          {columns.map(col => (
             <col key={col.key} style={{ width: col.width }} />
           ))}
         </colgroup>
         <thead>
           <tr className="bg-header-bg">
-            {COLUMNS.map(col => (
+            {columns.map(col => (
               <th key={col.key} className={`px-3 py-2 text-xs font-medium text-text-primary/90 text-${col.align}`}>{col.label}</th>
             ))}
           </tr>
@@ -84,7 +97,7 @@ function CapTable({ title, section, showZeroRows }) {
               </tr>,
               ...filteredRows.map((r, i) => (
                 <tr key={r.style} className={i % 2 === 0 ? 'bg-dark-bg' : 'bg-alt-bg'}>
-                  {COLUMNS.map(col => (
+                  {columns.map(col => (
                     <td key={col.key} className={`px-3 py-1.5 text-sm text-${col.align} ${col.key === 'difference' ? diffColorClass(r.difference) : ''}`}>
                       {col.fmt(r)}
                     </td>
@@ -92,7 +105,7 @@ function CapTable({ title, section, showZeroRows }) {
                 </tr>
               )),
               <tr key={`${group.label}-subtotal`} className="border-t border-border bg-dark-bg">
-                {COLUMNS.map(col => (
+                {columns.map(col => (
                   <td key={col.key} className={`px-3 py-1.5 text-sm font-semibold text-${col.align} ${col.key === 'style' ? 'text-steel-blue' : ''} ${col.key === 'difference' ? diffColorClass(subtotal.difference) : ''}`}>
                     {col.fmt(subtotal)}
                   </td>
@@ -103,7 +116,7 @@ function CapTable({ title, section, showZeroRows }) {
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-accent bg-dark-bg font-semibold">
-            {COLUMNS.map(col => {
+            {columns.map(col => {
               const totalRow = {
                 style: 'Total',
                 currentDollar: section.currentTotal,
@@ -131,6 +144,23 @@ export default function CapitalizationPanel() {
   const { accounts, assumptions, showZeroRows, setShowZeroRows } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [scope, setScope] = useState('managed');
+
+  const [hidden, setHidden] = useState(() => loadColumnState(STORAGE_KEY, TOGGLEABLE_KEYS).hidden);
+  useEffect(() => {
+    saveColumnState(STORAGE_KEY, { hidden });
+  }, [hidden]);
+
+  const visibleColumns = useMemo(() => getVisibleColumns(hidden), [hidden]);
+
+  const toggleColumn = (key) => {
+    setHidden(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+  };
+  const resetColumns = () => setHidden([]);
+
+  const popoverColumns = [
+    { key: 'style', label: 'Style', locked: true },
+    ...COLUMNS.filter(c => c.key !== 'style').map(c => ({ key: c.key, label: c.label })),
+  ];
 
   const scopedAccounts = useMemo(
     () => scope === 'managed' ? accounts.filter(a => a.managed !== false) : accounts,
@@ -174,12 +204,19 @@ export default function CapitalizationPanel() {
             />
             Show zero rows
           </label>
+          <ColumnsPopover
+            columns={popoverColumns}
+            hidden={hidden}
+            reorderable={false}
+            onToggle={toggleColumn}
+            onReset={resetColumns}
+          />
         </div>
       </div>
 
-      <CapTable title="Domestic Equity" section={domestic} showZeroRows={showZeroRows} />
-      <CapTable title="Foreign Equity" section={foreign} showZeroRows={showZeroRows} />
-      <CapTable title="Combined Equity" section={combined} showZeroRows={showZeroRows} />
+      <CapTable title="Domestic Equity" section={domestic} showZeroRows={showZeroRows} columns={visibleColumns} />
+      <CapTable title="Foreign Equity" section={foreign} showZeroRows={showZeroRows} columns={visibleColumns} />
+      <CapTable title="Combined Equity" section={combined} showZeroRows={showZeroRows} columns={visibleColumns} />
     </div>
   );
 }

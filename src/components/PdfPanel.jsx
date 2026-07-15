@@ -11,6 +11,7 @@ import {
   getAccountTotal, getMarketValue, getPostValue,
 } from '../utils/calculations';
 import { formatCurrency, formatPercent, formatDate, formatDateFile } from '../utils/formatting';
+import { computeExpenseData, readExpenseCache } from '../utils/expenses';
 
 const PALETTES = {
   dark: {
@@ -62,8 +63,14 @@ const ALL_SUM_COLS = [
   { key: 'difference', label: 'Difference %', width: 16, align: 'right', toggleable: true },
 ];
 
-function getVisibleSumCols(includeSummaryColumns) {
-  const visible = ALL_SUM_COLS.filter(c => !c.toggleable || includeSummaryColumns[c.key]);
+// Default order of the toggleable Summary columns (Category is locked first)
+const DEFAULT_SUM_COL_ORDER = ALL_SUM_COLS.filter(c => c.toggleable).map(c => c.key);
+
+function getVisibleSumCols(includeSummaryColumns, summaryColOrder) {
+  const order = ['category', ...(summaryColOrder || DEFAULT_SUM_COL_ORDER)];
+  const visible = order
+    .map(key => ALL_SUM_COLS.find(c => c.key === key))
+    .filter(c => c && (!c.toggleable || includeSummaryColumns[c.key]));
   const totalW = visible.reduce((s, c) => s + c.width, 0);
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
@@ -103,7 +110,7 @@ function getVisibleCapCols(includeCapColumns) {
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
 }
 
-function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, showZeroRows, sectionOrder }) {
+function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, showZeroRows, sectionOrder, summaryColOrder, expenseData, expenseCacheEmpty }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
   const grandTotal = {
@@ -116,7 +123,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     difference: summaryRows.reduce((s, r) => s + r.portfolioPct, 0) - summaryRows.reduce((s, r) => s + r.targetPct, 0),
   };
 
-  const sumCols = getVisibleSumCols(includeSummaryColumns);
+  const sumCols = getVisibleSumCols(includeSummaryColumns, summaryColOrder);
 
   const capCols = getVisibleCapCols(includeCapColumns);
 
@@ -343,10 +350,107 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     });
   }
 
+  function renderExpensesPage() {
+    const { funds, totals, excluded, uncheckedCount, asOf } = expenseData;
+
+    const expCols = [
+      { key: 'ticker', label: 'Ticker', width: '10%', align: 'left' },
+      { key: 'name', label: 'Fund', width: '42%', align: 'left' },
+      { key: 'marketValue', label: 'Market Value', width: '16%', align: 'right' },
+      { key: 'erDisplay', label: 'Expense Ratio', width: '14%', align: 'right' },
+      { key: 'annualCost', label: 'Est. Annual Cost', width: '18%', align: 'right' },
+    ];
+    const expValGetters = {
+      ticker: (f) => f.ticker,
+      name: (f) => f.name || '',
+      marketValue: (f) => formatCurrency(f.marketValue),
+      erDisplay: (f) => f.erDisplay,
+      annualCost: (f) => formatCurrency(f.annualCost),
+    };
+
+    const footNotes = [];
+    if (excluded.length > 0) {
+      footNotes.push(`No expense data available: ${excluded.map(f => f.ticker).join(', ')} — excluded from averages.`);
+    }
+    if (uncheckedCount > 0) {
+      footNotes.push(`${uncheckedCount} holding${uncheckedCount === 1 ? '' : 's'} not yet checked.`);
+    }
+    if (asOf) {
+      footNotes.push(`Expense data as of ${formatDate(asOf.slice(0, 10))}.`);
+    }
+    footNotes.push('Expense ratios: Morningstar data via Yahoo Finance (net where available).');
+
+    const statLine = (label, value) => (
+      <View key={label} style={{ flexDirection: 'row', marginBottom: 3 }}>
+        <Text style={{ fontSize: 9, color: c.steelBlue, width: 170 }}>{label}</Text>
+        <Text style={{ fontSize: 9, color: c.text, fontWeight: 'bold' }}>{value}</Text>
+      </View>
+    );
+
+    return (
+      <Page size="LETTER" style={s.page} key="expenses">
+        <View style={s.header}>
+          <Text style={s.title}>Fund Expense Analysis</Text>
+          <Text style={s.subtitle}>
+            {assumptions.clientName} | As of {formatDate(assumptions.asOfDate)}
+          </Text>
+        </View>
+
+        {funds.length === 0 ? (
+          <Text style={[s.cell, { fontSize: 9 }]}>
+            {expenseCacheEmpty
+              ? 'No expense data fetched.'
+              : 'No funds with expense ratio data among the current holdings.'}
+          </Text>
+        ) : (
+          <View>
+            {/* Stat lines */}
+            <View style={{ marginBottom: 12 }}>
+              {statLine('Fund assets analyzed', `${formatCurrency(totals.fundAssets)} (${funds.length} fund${funds.length === 1 ? '' : 's'} with expense data)`)}
+              {statLine('Weighted avg expense ratio', totals.weightedAvgDisplay)}
+              {statLine('Est. annual fund expenses', formatCurrency(totals.totalAnnualCost))}
+            </View>
+
+            {/* Fund table */}
+            <View style={s.tableHeader}>
+              {expCols.map(col => (
+                <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>
+              ))}
+            </View>
+            {funds.map((f, i) => (
+              <View key={f.ticker} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+                {expCols.map(col => (
+                  <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
+                    {expValGetters[col.key](f)}
+                  </Text>
+                ))}
+              </View>
+            ))}
+            <View style={s.totalRow}>
+              <Text style={[s.cellAccent, { width: '10%', textAlign: 'left' }]}>Total</Text>
+              <Text style={[s.cell, { width: '42%' }]} />
+              <Text style={[s.cell, { width: '16%', textAlign: 'right' }]}>{formatCurrency(totals.fundAssets)}</Text>
+              <Text style={[s.cell, { width: '14%', textAlign: 'right' }]}>{totals.weightedAvgDisplay}</Text>
+              <Text style={[s.cell, { width: '18%', textAlign: 'right' }]}>{formatCurrency(totals.totalAnnualCost)}</Text>
+            </View>
+
+            {/* Footnotes */}
+            <View style={{ marginTop: 10 }}>
+              {footNotes.map((note, i) => (
+                <Text key={i} style={{ fontSize: 7, color: c.steelBlue, marginBottom: 2 }}>{note}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+      </Page>
+    );
+  }
+
   const pageRenderers = {
     summary: renderSummaryPage,
     capitalization: renderCapitalizationPage,
     securities: renderSecuritiesPages,
+    expenses: renderExpensesPage,
   };
 
   return (
@@ -364,6 +468,7 @@ export default function PdfPanel() {
     summary: true,
     capitalization: true,
     securities: true,
+    expenses: false, // advisor opts in
   });
   const [includeColumns, setIncludeColumns] = useState({
     ticker: true,
@@ -391,7 +496,8 @@ export default function PdfPanel() {
     targetPct: true,
     difference: true,
   });
-  const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities']);
+  const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities', 'expenses']);
+  const [summaryColOrder, setSummaryColOrder] = useState(DEFAULT_SUM_COL_ORDER);
 
   const toggleSection = (key) => {
     setIncludeSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -414,8 +520,22 @@ export default function PdfPanel() {
       return next;
     });
   };
+  const moveSummaryCol = (index, direction) => {
+    setSummaryColOrder(prev => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
 
-  const anySelected = includeSections.summary || includeSections.capitalization || includeSections.securities;
+  // Read once per mount (the panel remounts on every tab visit, and the
+  // cache is only written from the Expenses tab). Drives the UI hint;
+  // handleGenerate re-reads fresh at generation time.
+  const expenseCacheEmptyUi = useMemo(() => Object.keys(readExpenseCache()).length === 0, []);
+
+  const anySelected = Object.values(includeSections).some(Boolean);
 
   const { rows: summaryRows, total: summaryTotal } = useMemo(
     () => getSummaryData(accounts, targetProfile, customSecurities),
@@ -447,6 +567,13 @@ export default function PdfPanel() {
         chartImage = canvas.toDataURL('image/png');
       }
 
+      // Expense data: re-read the cache at generation time so the PDF
+      // always reflects the latest fetch from the Expenses tab. Numbers
+      // come from the same computeExpenseData the tab renders.
+      const erCache = readExpenseCache();
+      const expenseData = computeExpenseData(accounts, erCache);
+      const expenseCacheEmpty = Object.keys(erCache).length === 0;
+
       // Generate PDF blob
       const blob = await pdf(
         <SummaryDoc
@@ -464,6 +591,9 @@ export default function PdfPanel() {
           includeCapColumns={includeCapColumns}
           showZeroRows={showZeroRows}
           sectionOrder={sectionOrder}
+          summaryColOrder={summaryColOrder}
+          expenseData={expenseData}
+          expenseCacheEmpty={expenseCacheEmpty}
         />
       ).toBlob();
 
@@ -478,7 +608,7 @@ export default function PdfPanel() {
       console.error('PDF generation failed:', e);
     }
     setGenerating(false);
-  }, [accounts, assumptions, summaryRows, summaryTotal, sections, capData, theme, fileName, includeColumns]);
+  }, [accounts, assumptions, summaryRows, summaryTotal, sections, capData, theme, fileName, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, showZeroRows, sectionOrder, summaryColOrder]);
 
   return (
     <div>
@@ -493,7 +623,8 @@ export default function PdfPanel() {
               { key: 'summary', label: 'Summary', desc: 'Household rollup table + pie chart' },
               { key: 'capitalization', label: 'Capitalization', desc: 'Equity style breakdown (Domestic / Foreign / Combined) — managed accounts' },
               { key: 'securities', label: 'Securities', desc: 'Per-account holdings detail' },
-            ].map(({ key, label, desc }) => (
+              { key: 'expenses', label: 'Expenses', desc: 'Fund expense ratios and estimated annual costs', hint: expenseCacheEmptyUi ? '(fetch expense ratios on the Expenses tab first)' : null },
+            ].map(({ key, label, desc, hint }) => (
               <label key={key} className="flex items-start gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -503,6 +634,7 @@ export default function PdfPanel() {
                 />
                 <div>
                   <span className="text-sm font-medium group-hover:text-accent transition-colors">{label}</span>
+                  {hint && <span className="text-xs text-negative/80 ml-2">{hint}</span>}
                   <span className="block text-xs text-text-primary/50">{desc}</span>
                 </div>
               </label>
@@ -519,7 +651,7 @@ export default function PdfPanel() {
           <p className="text-sm text-steel-blue mb-3">Reorder sections in the PDF:</p>
           <div className="space-y-1">
             {visibleOrder.map((key, visIdx) => {
-              const labels = { summary: 'Summary', capitalization: 'Capitalization', securities: 'Securities' };
+              const labels = { summary: 'Summary', capitalization: 'Capitalization', securities: 'Securities', expenses: 'Expenses' };
               const fullIdx = sectionOrder.indexOf(key);
               return (
                 <div key={key} className="flex items-center gap-2 py-1.5 px-3 bg-alt-bg rounded border border-border">
@@ -551,29 +683,39 @@ export default function PdfPanel() {
           <div className="flex gap-4 flex-wrap">
             {includeSections.summary && (
               <div className="bg-dark-bg rounded-lg p-4 border border-border flex-1 min-w-[250px]">
-                <p className="text-sm text-steel-blue mb-3">Select columns for Summary page:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { key: 'portfolioDollar', label: 'Portfolio $' },
-                    { key: 'portfolioPct', label: 'Portfolio %' },
-                    { key: 'overallDollar', label: 'Overall $' },
-                    { key: 'overallPct', label: 'Overall %' },
-                    { key: 'targetPct', label: 'Target %' },
-                    { key: 'reallocation', label: 'Reallocation $' },
-                    { key: 'difference', label: 'Difference %' },
-                  ].map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={includeSummaryColumns[key]}
-                        onChange={() => toggleSummaryColumn(key)}
-                        className="accent-accent"
-                      />
-                      <span className="text-sm group-hover:text-accent transition-colors">{label}</span>
-                    </label>
-                  ))}
+                <p className="text-sm text-steel-blue mb-3">Select and reorder columns for Summary page:</p>
+                <div className="space-y-1">
+                  {summaryColOrder.map((key, idx) => {
+                    const col = ALL_SUM_COLS.find(c => c.key === key);
+                    if (!col) return null;
+                    return (
+                      <div key={key} className="flex items-center gap-2 py-1 px-2 bg-alt-bg rounded border border-border">
+                        <input
+                          type="checkbox"
+                          checked={includeSummaryColumns[key]}
+                          onChange={() => toggleSummaryColumn(key)}
+                          className="accent-accent"
+                        />
+                        <span className="text-sm flex-1">{col.label}</span>
+                        <button
+                          onClick={() => moveSummaryCol(idx, -1)}
+                          disabled={idx === 0}
+                          className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          onClick={() => moveSummaryCol(idx, 1)}
+                          disabled={idx === summaryColOrder.length - 1}
+                          className="px-1.5 py-0.5 text-xs rounded border border-border hover:border-accent hover:text-accent disabled:opacity-30 disabled:hover:border-border disabled:hover:text-text-primary transition-colors"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <p className="text-xs text-text-primary/40 mt-2">Category is always included.</p>
+                <p className="text-xs text-text-primary/40 mt-2">Category is always included and locked as the first column.</p>
               </div>
             )}
             {includeSections.securities && (

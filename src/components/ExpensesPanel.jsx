@@ -1,58 +1,12 @@
 import { useState, useRef, useMemo } from 'react';
 import { useAppContext } from '../AppContext';
-import { getPostValue } from '../utils/calculations';
 import { formatCurrency } from '../utils/formatting';
+import {
+  EXPENSE_CACHE_KEY, readExpenseCache, getTickerValues, computeExpenseData,
+} from '../utils/expenses';
 
 const BATCH_SIZE = 15;
 const BATCH_DELAY_MS = 350;
-const CACHE_KEY = 'bp-expense-ratios';
-
-const FUND_TYPES = new Set(['MUTUALFUND', 'ETF', 'MONEYMARKET']);
-
-// Skip cash placeholders ($$$$) and CUSIP-like identifiers (9-char
-// alphanumerics containing digits) that Yahoo won't recognize.
-function isFetchable(ticker) {
-  return !/^\$+$/.test(ticker) && !(/^[A-Z0-9]{9}$/.test(ticker) && /\d/.test(ticker));
-}
-
-function readCache() {
-  try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-
-// Derive the expense ratio as a decimal fraction (e.g. 0.0009 for 0.09%).
-// The fmt string from Yahoo ("0.09%") is unambiguous, so parse it when
-// present. Otherwise fall back to a heuristic on the raw number: values
-// above 0.5 are treated as percent-numbers (0.75 → 0.75%) since no real
-// fund charges over 50%, values at or below 0.5 as fractions.
-// POST-DEPLOY QA: the unit of the raw Yahoo value (fraction vs
-// percent-number) could NOT be verified from the build environment —
-// verify this heuristic against live data before trusting raw-only math.
-function erFraction(entry) {
-  if (!entry) return null;
-  if (typeof entry.expenseRatioFmt === 'string') {
-    const parsed = parseFloat(entry.expenseRatioFmt.replace('%', ''));
-    if (!isNaN(parsed)) return parsed / 100;
-  }
-  const r = entry.expenseRatio;
-  if (typeof r === 'number' && !isNaN(r)) {
-    return r > 0.5 ? r / 100 : r;
-  }
-  return null;
-}
-
-// Display string for the expense ratio: Yahoo's fmt verbatim when present,
-// else the derived fraction shown as a percent with 2 decimals.
-function erDisplay(entry, fraction) {
-  if (typeof entry.expenseRatioFmt === 'string' && entry.expenseRatioFmt) {
-    return entry.expenseRatioFmt;
-  }
-  if (fraction != null) return (fraction * 100).toFixed(2) + '%';
-  return '—';
-}
 
 function StatCard({ label, value, sub }) {
   return (
@@ -67,24 +21,14 @@ function StatCard({ label, value, sub }) {
 export default function ExpensesPanel() {
   const { accounts } = useAppContext();
 
-  const [cache, setCache] = useState(readCache);
+  const [cache, setCache] = useState(readExpenseCache);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const cancelRef = useRef(false);
 
   // Every unique fetchable ticker across ALL account holdings, with its
   // total post-change market value summed across accounts.
-  const tickerValues = useMemo(() => {
-    const values = {};
-    for (const acct of accounts) {
-      for (const h of acct.holdings) {
-        const t = h.ticker?.toUpperCase().trim();
-        if (!t || !isFetchable(t)) continue;
-        values[t] = (values[t] || 0) + getPostValue(h);
-      }
-    }
-    return values;
-  }, [accounts]);
+  const tickerValues = useMemo(() => getTickerValues(accounts), [accounts]);
 
   const sessionTickers = Object.keys(tickerValues);
   const cacheHasEntries = Object.keys(cache).length > 0;
@@ -92,7 +36,7 @@ export default function ExpensesPanel() {
   const persistCache = (next) => {
     setCache(next);
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify(next));
+      localStorage.setItem(EXPENSE_CACHE_KEY, JSON.stringify(next));
     } catch {
       // localStorage unavailable or full — cache just won't persist
     }
@@ -147,42 +91,15 @@ export default function ExpensesPanel() {
     cancelRef.current = true;
   };
 
-  // Partition the session's tickers by what we know about them.
-  const fundRows = [];
-  const noDataFunds = [];
-  let uncheckedCount = 0;
-
-  for (const ticker of sessionTickers) {
-    const entry = cache[ticker];
-    if (!entry) {
-      uncheckedCount++;
-      continue;
-    }
-    const fraction = erFraction(entry);
-    if (fraction != null) {
-      const marketValue = tickerValues[ticker];
-      fundRows.push({
-        ticker,
-        name: entry.name,
-        marketValue,
-        display: erDisplay(entry, fraction),
-        annualCost: marketValue * fraction,
-      });
-    } else if (FUND_TYPES.has(entry.instrumentType)) {
-      // Fund-like but Yahoo returned no expense ratio — excluded from all
-      // averages (accuracy over completeness), surfaced to the advisor.
-      noDataFunds.push({ ticker, name: entry.name });
-    }
-    // Equities / other types with no expense data are silently omitted.
-  }
-
-  fundRows.sort((a, b) => b.annualCost - a.annualCost);
-
-  const totalFundValue = fundRows.reduce((s, r) => s + r.marketValue, 0);
-  const totalAnnualCost = fundRows.reduce((s, r) => s + r.annualCost, 0);
-  // Weighted average over funds WITH data only — never count no-data funds as zero.
-  const weightedAvg = totalFundValue > 0 ? totalAnnualCost / totalFundValue : null;
-  const weightedAvgDisplay = weightedAvg != null ? (weightedAvg * 100).toFixed(2) + '%' : '—';
+  // Single source of truth shared with the PDF report — the tab and the
+  // PDF always agree because both render computeExpenseData's output.
+  const expenseData = useMemo(() => computeExpenseData(accounts, cache), [accounts, cache]);
+  const {
+    funds: fundRows,
+    excluded: noDataFunds,
+    uncheckedCount,
+    totals: { fundAssets: totalFundValue, totalAnnualCost, weightedAvgDisplay },
+  } = expenseData;
 
   const hasHoldings = sessionTickers.length > 0;
 
@@ -271,7 +188,7 @@ export default function ExpensesPanel() {
                       <td className="px-3 py-1.5 font-semibold">{row.ticker}</td>
                       <td className="px-3 py-1.5 text-text-primary/80">{row.name}</td>
                       <td className="px-3 py-1.5">{formatCurrency(row.marketValue)}</td>
-                      <td className="px-3 py-1.5">{row.display}</td>
+                      <td className="px-3 py-1.5">{row.erDisplay}</td>
                       <td className="px-3 py-1.5">{formatCurrency(row.annualCost)}</td>
                     </tr>
                   ))}

@@ -205,10 +205,13 @@ function classify(meta, summary, name) {
 //   2. fundProfile.feesExpensesInvestment.annualReportExpenseRatio
 //   3. defaultKeyStatistics.annualReportExpenseRatio
 // Returns BOTH the raw number exactly as Yahoo provides it AND the fmt
-// string exactly as provided (e.g. "0.09%"), because the unit of the raw
-// value (fraction 0.0009 vs percent-number 0.09) cannot be verified from
-// this environment. The client displays fmt when present; post-deploy QA
-// must lock down the raw unit before raw is used in any math.
+// string exactly as provided (e.g. "0.09%"). UNIT VERIFIED post-deploy
+// 2026-07: raw is a FRACTION (VOO 0.0003 = "0.03%", SPY 0.000945 = "0.0945%",
+// PHYZX 0.0051 = "0.51%").
+// ZERO HANDLING (verified with BAGIX, real ER 0.30%, whose netExpRatio is a
+// bare 0 on Yahoo): a 0 in one source falls through to the next source; 0 is
+// only returned if every available source agrees — covering legitimately
+// zero-fee funds (e.g. Fidelity ZERO series) without swallowing bad data.
 // EQUITY and unknown types return {} — no expense fields at all — which is
 // what keeps individual stocks off the Expenses tab.
 function extractExpenseRatio(meta, summary) {
@@ -225,15 +228,28 @@ function extractExpenseRatio(meta, summary) {
     keyStats.annualReportExpenseRatio,
   ];
 
+  const toResult = (candidate, value) => ({
+    expenseRatio: value,
+    expenseRatioFmt:
+      candidate && typeof candidate === 'object' && typeof candidate.fmt === 'string'
+        ? candidate.fmt
+        : null,
+  });
+
+  let zeroCandidate = null;
   for (const candidate of candidates) {
     const value = raw(candidate);
-    if (value != null) {
-      const fmt =
-        candidate && typeof candidate === 'object' && typeof candidate.fmt === 'string'
-          ? candidate.fmt
-          : null;
-      return { expenseRatio: value, expenseRatioFmt: fmt };
+    if (value != null && value > 0) {
+      return toResult(candidate, value);
     }
+    if (value === 0 && zeroCandidate == null) {
+      zeroCandidate = candidate;
+    }
+  }
+
+  // All sources were 0 (or absent with at least one 0) — genuinely zero-fee
+  if (zeroCandidate != null) {
+    return toResult(zeroCandidate, 0);
   }
 
   // Fund type but no expense data — the client lists these as excluded
