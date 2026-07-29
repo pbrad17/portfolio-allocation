@@ -9,6 +9,7 @@ import { SUMMARY_SECTIONS } from '../data/styleMapping';
 import {
   getSummaryData, getSectionTotal, getCapitalizationData,
   getAccountTotal, getMarketValue, getPostValue,
+  hasKnownBasis, getUnrealizedGain, getRealizedGain, getGainSummary,
 } from '../utils/calculations';
 import { formatCurrency, formatPercent, formatDate, formatDateFile } from '../utils/formatting';
 import { computeExpenseData, readExpenseCache } from '../utils/expenses';
@@ -82,6 +83,10 @@ const ALL_HOLD_COLS = [
   { key: 'qty', label: 'Qty', width: 8, align: 'right', toggleable: true },
   { key: 'price', label: 'Price', width: 8, align: 'right', toggleable: true },
   { key: 'mktValue', label: 'Mkt Value', width: 12, align: 'right', toggleable: false },
+  // Capital-gain columns (default OFF — reports look identical unless enabled)
+  { key: 'costBasis', label: 'Cost Basis', width: 11, align: 'right', toggleable: true },
+  { key: 'unrealized', label: 'Unrl. G/L', width: 11, align: 'right', toggleable: true },
+  { key: 'realized', label: 'Sell G/L', width: 10, align: 'right', toggleable: true },
   { key: 'change', label: 'Change', width: 10, align: 'right', toggleable: true },
   { key: 'postValue', label: 'Post Value', width: 12, align: 'right', toggleable: true },
   { key: 'pctAcct', label: '% Acct', width: 8, align: 'right', toggleable: true },
@@ -91,6 +96,22 @@ function getVisibleCols(includeColumns) {
   const visible = ALL_HOLD_COLS.filter(c => !c.toggleable || includeColumns[c.key]);
   const totalW = visible.reduce((s, c) => s + c.width, 0);
   return visible.map(c => ({ ...c, width: `${((c.width / totalW) * 100).toFixed(1)}%` }));
+}
+
+// Adaptive type size for the securities table: every column keeps breathing
+// room as more columns are enabled, instead of the text crowding together.
+// 9 or fewer columns matches the original look exactly.
+function holdingsFontSize(colCount) {
+  if (colCount <= 9) return 7;
+  if (colCount <= 11) return 6.5;
+  return 6;
+}
+
+// Horizontal gutter so left-aligned text (long security names especially)
+// never runs into the next column. Right-aligned numeric cells get a small
+// left inset for the same reason on wrap.
+function cellGutter(align) {
+  return align === 'left' ? { paddingRight: 6 } : { paddingLeft: 3 };
 }
 
 const ALL_CAP_COLS = [
@@ -134,27 +155,31 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   ];
 
   function diffColor(val) {
+    if (val == null) return undefined;
     if (val > 0.0001) return c.positive;
     if (val < -0.0001) return c.negative;
-    return c.white;
+    return undefined;
   }
 
+  // Rollup child rows (Municipal / Short Duration Bonds) carry null target
+  // fields — they count toward the Investment Grade target instead
   const sumValGetters = {
     category: (row) => row.category,
     portfolioDollar: (row) => formatCurrency(row.portfolioDollar),
     portfolioPct: (row) => formatPercent(row.portfolioPct),
     overallDollar: (row) => formatCurrency(row.overallDollar),
     overallPct: (row) => formatPercent(row.overallPct),
-    targetPct: (row) => formatPercent(row.targetPct),
-    reallocation: (row) => formatCurrency(row.reallocation),
-    difference: (row) => formatPercent(row.difference),
+    targetPct: (row) => (row.targetPct == null ? '—' : formatPercent(row.targetPct)),
+    reallocation: (row) => (row.reallocation == null ? '—' : formatCurrency(row.reallocation)),
+    difference: (row) => (row.difference == null ? '—' : formatPercent(row.difference)),
   };
 
   function renderSumRow(row, idx) {
+    const diffC = diffColor(row.difference);
     return (
-      <View key={row.category} style={[s.row, idx % 2 === 0 ? s.rowEven : s.rowAlt]}>
+      <View key={row.category} style={[s.row, idx % 2 === 0 ? s.rowEven : s.rowAlt]} wrap={false}>
         {sumCols.map(col => (
-          <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, col.key === 'difference' ? { color: diffColor(row.difference) } : {}]}>
+          <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, cellGutter(col.align), col.key === 'difference' && diffC ? { color: diffC } : {}]}>
             {sumValGetters[col.key](row)}
           </Text>
         ))}
@@ -163,10 +188,11 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   }
 
   function renderTotalRow(label, data) {
+    const diffC = diffColor(data.difference);
     return (
-      <View style={s.totalRow}>
+      <View style={s.totalRow} wrap={false}>
         {sumCols.map(col => (
-          <Text key={col.key} style={[col.key === 'category' ? s.cellAccent : s.cell, { width: col.width, textAlign: col.align }, col.key === 'difference' ? { color: diffColor(data.difference) } : {}]}>
+          <Text key={col.key} style={[col.key === 'category' ? s.cellAccent : s.cell, { width: col.width, textAlign: col.align }, cellGutter(col.align), col.key === 'difference' && diffC ? { color: diffC } : {}]}>
             {col.key === 'category' ? label : sumValGetters[col.key](data)}
           </Text>
         ))}
@@ -209,7 +235,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
     function renderCapRow(data, rowStyle) {
       return capCols.map(col => (
-        <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, col.key === 'style' ? { color: rowStyle?.labelColor } : {}, col.key === 'difference' ? { color: diffColor(data.difference) } : {}, rowStyle?.bold ? { fontWeight: 'bold' } : {}]}>
+        <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, cellGutter(col.align), col.key === 'style' ? { color: rowStyle?.labelColor } : {}, col.key === 'difference' ? { color: diffColor(data.difference) } : {}, rowStyle?.bold ? { fontWeight: 'bold' } : {}]}>
           {capValGetters[col.key](data)}
         </Text>
       ));
@@ -219,7 +245,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       <View key={title}>
         <Text style={[s.sectionTitle, { fontSize: 9, padding: 3, marginTop: 4 }]}>{title}</Text>
         <View style={[s.tableHeader, compact]}>
-          {capCols.map(col => <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
+          {capCols.map(col => <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }, cellGutter(col.align)]}>{col.label}</Text>)}
         </View>
         {CAP_GROUPS.map(group => {
           const groupRows = group.indices.map(i => allRows[i]).filter(r => r && (showZeroRows ? true : (r.currentDollar !== 0 || r.postDollar !== 0)));
@@ -257,6 +283,27 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
   }
 
   function renderSummaryPage() {
+    // Size the chart to the space left under the table so it stays on page
+    // one instead of being pushed to its own page when many asset classes
+    // are in use. Estimates use the same pt sizes as the styles above.
+    const renderedRowCount = sections.reduce(
+      (n, sec) => n + summaryRows.filter(r => sec.categories.includes(r.category) && (r.portfolioDollar || r.overallDollar || r.targetPct)).length,
+      0
+    );
+    const hasRollupRows = summaryRows.some(r => r.rollsInto && (r.portfolioDollar || r.overallDollar));
+    const PAGE_USABLE = 732;         // LETTER 792pt minus 30pt padding top+bottom
+    const HEADER_H = 73;             // title block + margin
+    const TABLE_HEADER_H = 16.5;
+    const SECTION_H = 49.2;          // section title + section total row
+    const ROW_H = 14.9;
+    const GRAND_TOTAL_H = 18;
+    const ROLLUP_NOTE_H = hasRollupRows ? 14 : 0;
+    const estUsed = HEADER_H + TABLE_HEADER_H + sections.length * SECTION_H + renderedRowCount * ROW_H + GRAND_TOTAL_H + ROLLUP_NOTE_H;
+    const available = PAGE_USABLE - estUsed - 24; // chart margins + safety
+    const FULL_W = 352, FULL_H = 300, MIN_H = 160;
+    const chartH = Math.round(Math.max(MIN_H, Math.min(FULL_H, available)));
+    const chartW = Math.round(FULL_W * (chartH / FULL_H));
+
     return (
       <Page size="LETTER" style={s.page} key="summary">
         <View style={s.header}>
@@ -267,7 +314,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         </View>
 
         <View style={s.tableHeader}>
-          {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>)}
+          {sumCols.map(col => <Text key={col.label} style={[s.th, { width: col.width, textAlign: col.align }, cellGutter(col.align)]}>{col.label}</Text>)}
         </View>
 
         {sections.map(sec => {
@@ -283,7 +330,13 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         })}
         {renderTotalRow('Grand Total', grandTotal)}
 
-        {chartImage && <Image src={chartImage} style={s.chartImg} />}
+        {hasRollupRows && (
+          <Text style={{ fontSize: 6.5, color: c.steelBlue, marginTop: 4, paddingHorizontal: 4 }}>
+            Municipal Bonds and Short Duration Bonds count toward the Investment Grade target; the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+          </Text>
+        )}
+
+        {chartImage && <Image src={chartImage} style={[s.chartImg, { width: chartW, height: chartH }]} />}
       </Page>
     );
   }
@@ -304,6 +357,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   function renderSecuritiesPages() {
     const visCols = getVisibleCols(includeColumns);
+    const fs = holdingsFontSize(visCols.length);
+    const gainColsOn = includeColumns.costBasis || includeColumns.unrealized || includeColumns.realized;
     const valGetters = {
       ticker: (h) => h.ticker,
       security: (h) => h.securityName,
@@ -311,10 +366,31 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       qty: (h) => h.quantity ? h.quantity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00',
       price: (h) => h.price ? '$' + h.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '$0.00',
       mktValue: (h) => formatCurrency(getMarketValue(h)),
+      costBasis: (h) => (hasKnownBasis(h) ? formatCurrency(h.costBasis) : '—'),
+      unrealized: (h) => {
+        const u = getUnrealizedGain(h);
+        return u == null ? '—' : formatCurrency(u);
+      },
+      realized: (h) => {
+        const r = getRealizedGain(h);
+        if (r == null) return '';
+        const term = r.term === true ? ' LT' : r.term === false ? ' ST' : '';
+        return `${formatCurrency(r.amount)}${term}`;
+      },
       change: (h) => formatCurrency(h.proposedChange || 0),
       postValue: (h) => formatCurrency(getPostValue(h)),
       pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
     };
+    // Gain amounts read green/orange like the Difference column does
+    function gainColor(h, key) {
+      let v = null;
+      if (key === 'unrealized') v = getUnrealizedGain(h);
+      if (key === 'realized') v = getRealizedGain(h)?.amount ?? null;
+      if (v == null) return {};
+      if (v > 0.005) return { color: c.positive };
+      if (v < -0.005) return { color: c.negative };
+      return {};
+    }
     // Managed accounts first (in their current relative order), then unmanaged
     const orderedAccounts = [
       ...accounts.filter(a => a.managed !== false),
@@ -323,6 +399,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     return orderedAccounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
       const acctTotal = getAccountTotal(acct.holdings);
       const unmanaged = acct.managed === false;
+      const gains = gainColsOn ? getGainSummary([acct]) : null;
+      const showGainsLine = gains && (gains.sellCount > 0 || gains.sellsWithoutBasis > 0 || gains.positionsWithBasis > 0);
       return (
         <Page key={acct.id} size="LETTER" style={s.page}>
           <View style={s.header}>
@@ -333,18 +411,43 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
           </View>
           <View style={s.tableHeader}>
             {visCols.map(col => (
-              <Text key={col.key} style={[s.th, { width: col.width, textAlign: col.align }]}>{col.label}</Text>
+              <Text key={col.key} style={[s.th, { fontSize: fs, width: col.width, textAlign: col.align }, cellGutter(col.align)]}>{col.label}</Text>
             ))}
           </View>
           {acct.holdings.filter(h => h.ticker).map((h, i) => (
-            <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+            // wrap={false}: a holding row is an unbreakable unit — multi-line
+            // security names previously split across page boundaries
+            <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]} wrap={false}>
               {visCols.map(col => (
-                <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
+                <Text key={col.key} style={[s.cell, { fontSize: fs, width: col.width, textAlign: col.align }, cellGutter(col.align), gainColor(h, col.key)]}>
                   {valGetters[col.key](h, acctTotal)}
                 </Text>
               ))}
             </View>
           ))}
+          {showGainsLine && (
+            <View style={{ marginTop: 6, paddingHorizontal: 4 }} wrap={false}>
+              {gains.positionsWithBasis > 0 && (
+                <Text style={{ fontSize: 7, color: c.steelBlue, marginBottom: 2 }}>
+                  Unrealized gain/loss: {formatCurrency(gains.unrealized)}
+                  {gains.positionsWithoutBasis > 0
+                    ? ` (cost basis entered on ${gains.positionsWithBasis} of ${gains.positionsWithBasis + gains.positionsWithoutBasis} positions)`
+                    : ''}
+                </Text>
+              )}
+              {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
+                <Text style={{ fontSize: 7, color: c.steelBlue }}>
+                  Proposed sells realize est. {formatCurrency(gains.realized)}
+                  {(gains.realizedLT !== 0 || gains.realizedST !== 0)
+                    ? ` (${formatCurrency(gains.realizedLT)} long-term / ${formatCurrency(gains.realizedST)} short-term${gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})`
+                    : ''}
+                  {gains.sellsWithoutBasis > 0
+                    ? ` — ${gains.sellsWithoutBasis} proposed sell${gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis, not included`
+                    : ''}
+                </Text>
+              )}
+            </View>
+          )}
         </Page>
       );
     });
@@ -418,7 +521,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
               ))}
             </View>
             {funds.map((f, i) => (
-              <View key={f.ticker} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]}>
+              <View key={f.ticker} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]} wrap={false}>
                 {expCols.map(col => (
                   <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }]}>
                     {expValGetters[col.key](f)}
@@ -474,6 +577,10 @@ export default function PdfPanel() {
     ticker: true,
     qty: true,
     price: true,
+    // Capital-gain columns are opt-in so existing reports look unchanged
+    costBasis: false,
+    unrealized: false,
+    realized: false,
     change: true,
     postValue: true,
     pctAcct: true,
@@ -729,8 +836,11 @@ export default function PdfPanel() {
                     { key: 'change', label: 'Change' },
                     { key: 'postValue', label: 'Post Value' },
                     { key: 'pctAcct', label: '% Acct' },
-                  ].map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                    { key: 'costBasis', label: 'Cost Basis' },
+                    { key: 'unrealized', label: 'Unrl. G/L' },
+                    { key: 'realized', label: 'Sell G/L', title: 'Estimated gain realized by proposed sells (LT/ST tagged when acquisition dates are entered)' },
+                  ].map(({ key, label, title }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer group" title={title}>
                       <input
                         type="checkbox"
                         checked={includeColumns[key]}
@@ -741,7 +851,7 @@ export default function PdfPanel() {
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included.</p>
+                <p className="text-xs text-text-primary/40 mt-2">Security, Style, and Mkt Value are always included. Text auto-sizes as columns are added so everything stays readable. Gain columns add a per-account gains footnote.</p>
               </div>
             )}
             {includeSections.capitalization && (

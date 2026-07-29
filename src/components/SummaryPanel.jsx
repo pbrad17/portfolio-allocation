@@ -13,15 +13,20 @@ const SUMMARY_COLUMNS = [
   { key: 'portfolioPct', label: 'Portfolio %', align: 'right', getter: r => formatPercent(r.portfolioPct) },
   { key: 'overallDollar', label: 'Overall $', align: 'right', getter: r => formatCurrency(r.overallDollar) },
   { key: 'overallPct', label: 'Overall %', align: 'right', getter: r => formatPercent(r.overallPct) },
-  { key: 'targetPct', label: 'Target %', align: 'right', getter: r => formatPercent(r.targetPct) },
-  { key: 'reallocation', label: 'Reallocation $', align: 'right', getter: r => formatCurrency(r.reallocation) },
-  { key: 'difference', label: 'Difference %', align: 'right', getter: r => formatPercent(r.difference) },
+  // Rollup child rows (Municipal / Short Duration Bonds) carry null target
+  // fields — they count toward the Investment Grade target instead
+  { key: 'targetPct', label: 'Target %', align: 'right', getter: r => (r.targetPct == null ? '—' : formatPercent(r.targetPct)) },
+  { key: 'reallocation', label: 'Reallocation $', align: 'right', getter: r => (r.reallocation == null ? '—' : formatCurrency(r.reallocation)) },
+  { key: 'difference', label: 'Difference %', align: 'right', getter: r => (r.difference == null ? '—' : formatPercent(r.difference)) },
 ];
 const COLUMNS_BY_KEY = Object.fromEntries(SUMMARY_COLUMNS.map(c => [c.key, c]));
 const DEFAULT_ORDER = SUMMARY_COLUMNS.map(c => c.key);
 const STORAGE_KEY = 'bp-summary-columns';
 
 function DiffCell({ value }) {
+  if (value == null) {
+    return <td className="px-3 py-1.5 text-right text-sm text-text-primary/30">—</td>;
+  }
   const color = value > 0.0001 ? 'text-positive' : value < -0.0001 ? 'text-negative' : '';
   return <td className={`px-3 py-1.5 text-right text-sm ${color}`}>{formatPercent(value)}</td>;
 }
@@ -182,6 +187,12 @@ export default function SummaryPanel() {
               <TotalRow label="Grand Total" data={grandTotal} cols={visibleCols} />
             </tfoot>
           </table>
+
+          {rows.some(r => r.rollsInto && (r.portfolioDollar !== 0 || r.overallDollar !== 0)) && (
+            <p className="mt-2 text-xs text-steel-blue/70">
+              Municipal Bonds and Short Duration Bonds count toward the Investment Grade target — the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+            </p>
+          )}
 
           {Math.abs(grandTotal.portfolioPct - 1) > 0.001 && total > 0 && (
             <div className="mt-2 text-negative text-sm">

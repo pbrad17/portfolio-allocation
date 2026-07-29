@@ -1,4 +1,4 @@
-import { STYLE_TO_CATEGORY, SUMMARY_SECTIONS } from '../data/styleMapping';
+import { STYLE_TO_CATEGORY, SUMMARY_SECTIONS, TARGET_ROLLUP } from '../data/styleMapping';
 
 export function getMarketValue(holding) {
   return (holding.quantity || 0) * (holding.price || 0);
@@ -154,9 +154,33 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
     const portfolioPct = total > 0 ? portfolioDollar / total : 0;
     const overallDollar = overallCategoryTotals[cat] || 0;
     const overallPct = overallTotal > 0 ? overallDollar / overallTotal : 0;
+
+    // Target rollup: child categories (e.g. Municipal Bonds → Investment
+    // Grade) display their own $ / % but carry NO target columns of their
+    // own — the parent row's target math runs on parent + children combined,
+    // so the reallocation column never suggests swapping between them.
+    if (TARGET_ROLLUP[cat]) {
+      rows.push({
+        category: cat,
+        portfolioDollar,
+        portfolioPct,
+        overallDollar,
+        overallPct,
+        targetPct: null,
+        reallocation: null,
+        difference: null,
+        rollsInto: TARGET_ROLLUP[cat],
+      });
+      continue;
+    }
+
+    const children = Object.keys(TARGET_ROLLUP).filter(child => TARGET_ROLLUP[child] === cat);
+    const combinedDollar = portfolioDollar + children.reduce((s, child) => s + (categoryTotals[child] || 0), 0);
+    const combinedPct = total > 0 ? combinedDollar / total : 0;
+
     const targetPct = targetProfile[cat] || 0;
-    const reallocation = total > 0 ? (targetPct - portfolioPct) * total : 0;
-    const difference = portfolioPct - targetPct;
+    const reallocation = total > 0 ? (targetPct - combinedPct) * total : 0;
+    const difference = combinedPct - targetPct;
 
     rows.push({
       category: cat,
@@ -167,6 +191,7 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
       targetPct,
       reallocation,
       difference,
+      ...(children.length > 0 ? { includesRollup: children } : {}),
     });
   }
 

@@ -45,11 +45,22 @@ export const STYLE_TO_ASSET_CLASS = Object.fromEntries(
 
 export const SUMMARY_SECTIONS = {
   Equities: ["Domestic", "Foreign", "Emerging Markets", "Real Estate", "Other Equity"],
-  // NOTE: Municipal Bonds and Short Duration Bonds are 0%-target buckets —
-  // target profile weights for them remain inside Investment Grade for now
-  // (advisor decision 2026-07-29), same treatment as Multisector Bonds.
+  // NOTE: Municipal Bonds and Short Duration Bonds display as their own rows
+  // but COUNT TOWARD the Investment Grade target (advisor decision
+  // 2026-07-29, clarified same day): their holdings roll into the IG row's
+  // target/reallocation/difference math via TARGET_ROLLUP below, and their
+  // own rows show an em-dash in the target columns.
   "Fixed Income": ["Cash", "Investment Grade", "Municipal Bonds", "Short Duration Bonds", "TIPS", "Foreign Bonds", "High Yield", "Multisector Bonds", "Other Fixed Income"],
   Alternatives: ["Commodities", "Hedge Funds", "Midstream Energy", "Other Alternatives"],
+};
+
+// Categories whose holdings count toward another category's target: the
+// child rows still display their own dollars/percentages, but target %,
+// reallocation $, and difference % are computed on the parent using the
+// combined (parent + children) actuals. Child rows show '—' in those columns.
+export const TARGET_ROLLUP = {
+  'Municipal Bonds': 'Investment Grade',
+  'Short Duration Bonds': 'Investment Grade',
 };
 
 export const CAP_STYLES = [
