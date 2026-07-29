@@ -22,6 +22,8 @@ export const STYLE_OPTIONS = [
   { style: "Other Equity",            category: "Other Equity",        assetClass: "Equities" },
   { style: "Cash",                    category: "Cash",                assetClass: "Fixed Income" },
   { style: "Investment Grade",        category: "Investment Grade",    assetClass: "Fixed Income" },
+  { style: "Municipal Bonds",         category: "Municipal Bonds",     assetClass: "Fixed Income" },
+  { style: "Short Duration Bonds",    category: "Short Duration Bonds", assetClass: "Fixed Income" },
   { style: "TIPS",                    category: "TIPS",                assetClass: "Fixed Income" },
   { style: "Foreign Bonds",           category: "Foreign Bonds",       assetClass: "Fixed Income" },
   { style: "High Yield",              category: "High Yield",          assetClass: "Fixed Income" },
@@ -43,7 +45,10 @@ export const STYLE_TO_ASSET_CLASS = Object.fromEntries(
 
 export const SUMMARY_SECTIONS = {
   Equities: ["Domestic", "Foreign", "Emerging Markets", "Real Estate", "Other Equity"],
-  "Fixed Income": ["Cash", "Investment Grade", "TIPS", "Foreign Bonds", "High Yield", "Multisector Bonds", "Other Fixed Income"],
+  // NOTE: Municipal Bonds and Short Duration Bonds are 0%-target buckets —
+  // target profile weights for them remain inside Investment Grade for now
+  // (advisor decision 2026-07-29), same treatment as Multisector Bonds.
+  "Fixed Income": ["Cash", "Investment Grade", "Municipal Bonds", "Short Duration Bonds", "TIPS", "Foreign Bonds", "High Yield", "Multisector Bonds", "Other Fixed Income"],
   Alternatives: ["Commodities", "Hedge Funds", "Midstream Energy", "Other Alternatives"],
 };
 

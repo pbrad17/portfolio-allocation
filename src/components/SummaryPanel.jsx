@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { TARGET_PROFILES } from '../data/targetProfiles';
 import { SUMMARY_SECTIONS } from '../data/styleMapping';
-import { getSummaryData, getSectionTotal } from '../utils/calculations';
+import { getSummaryData, getSectionTotal, getGainSummary } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
 import PieChartWidget from './PieChartWidget';
 import ColumnsPopover, { loadColumnState, saveColumnState } from './ColumnsPopover';
@@ -188,6 +188,45 @@ export default function SummaryPanel() {
               Warning: Portfolio total is {formatPercent(grandTotal.portfolioPct)}, not 100%
             </div>
           )}
+
+          {(() => {
+            const gains = getGainSummary(accounts);
+            if (gains.positionsWithBasis === 0 && gains.sellsWithoutBasis === 0) return null;
+            return (
+              <div className="mt-3 bg-dark-bg border border-border rounded px-3 py-2 text-sm space-y-1">
+                <div>
+                  <span className="text-steel-blue">Unrealized gain/loss (household): </span>
+                  <span className={`font-semibold ${gains.unrealized > 0.005 ? 'text-positive' : gains.unrealized < -0.005 ? 'text-negative' : ''}`}>
+                    {formatCurrency(gains.unrealized)}
+                  </span>
+                  {gains.positionsWithoutBasis > 0 && (
+                    <span className="text-text-primary/40 text-xs">
+                      {' '}(basis entered on {gains.positionsWithBasis} of {gains.positionsWithBasis + gains.positionsWithoutBasis} positions)
+                    </span>
+                  )}
+                </div>
+                {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
+                  <div>
+                    <span className="text-steel-blue">Est. gains realized by proposed trades: </span>
+                    <span className={`font-semibold ${gains.realized >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      {formatCurrency(gains.realized)}
+                    </span>
+                    {(gains.realizedLT !== 0 || gains.realizedST !== 0 || gains.realizedUnknownTerm !== 0) && (
+                      <span className="text-text-primary/60 text-xs">
+                        {' '}— {formatCurrency(gains.realizedLT)} LT / {formatCurrency(gains.realizedST)} ST
+                        {gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''}
+                      </span>
+                    )}
+                    {gains.sellsWithoutBasis > 0 && (
+                      <span className="text-negative/80 text-xs">
+                        {' '}({gains.sellsWithoutBasis} sell{gains.sellsWithoutBasis > 1 ? 's' : ''} missing basis — excluded)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Pie Chart */}

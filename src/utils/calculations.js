@@ -12,6 +12,96 @@ export function getAccountTotal(holdings) {
   return holdings.reduce((sum, h) => sum + getPostValue(h), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Cost basis / capital gains
+//
+// costBasis is the TOTAL dollar basis for the position (not per share) and is
+// OPTIONAL: 0/blank means "unknown" — every gain function returns null in
+// that case so the UI can render an em-dash instead of a fake $0 gain.
+// acquiredDate (ISO string, optional) drives the short/long-term split.
+// ---------------------------------------------------------------------------
+
+const CASH_TICKER_RE = /^\$+$/;
+
+export function hasKnownBasis(holding) {
+  return (holding.costBasis || 0) > 0;
+}
+
+export function getUnrealizedGain(holding) {
+  if (!hasKnownBasis(holding)) return null;
+  return getMarketValue(holding) - holding.costBasis;
+}
+
+// true = long-term (held MORE than 1 year), false = short-term, null =
+// unknown date. IRS rule: a sale on or before the one-year anniversary of
+// the acquisition date is short-term; long-term starts the day after.
+export function isLongTerm(acquiredDate, asOf = new Date()) {
+  if (!acquiredDate) return null;
+  const d = new Date(acquiredDate + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const oneYearLater = new Date(d);
+  oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+  // Compare calendar days, not timestamps — the anniversary day itself is ST
+  const asOfDay = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  return asOfDay > oneYearLater;
+}
+
+// Estimated realized gain if the proposed sell is executed, using the
+// average-cost method: the sold fraction of market value carries the same
+// fraction of total basis. Returns null unless this row is a sell
+// (proposedChange < 0) with a known basis and positive market value.
+export function getRealizedGain(holding) {
+  const mv = getMarketValue(holding);
+  const change = holding.proposedChange || 0;
+  if (change >= 0 || mv <= 0 || !hasKnownBasis(holding)) return null;
+  const fraction = Math.min(1, -change / mv);
+  return {
+    amount: fraction * (mv - holding.costBasis),
+    fraction,
+    term: isLongTerm(holding.acquiredDate), // true LT / false ST / null unknown
+  };
+}
+
+// Household-level gain rollup across accounts (managed + unmanaged alike —
+// capital gains are a tax question, not a management-scope question).
+export function getGainSummary(accounts) {
+  const summary = {
+    unrealized: 0,
+    positionsWithBasis: 0,
+    positionsWithoutBasis: 0, // non-cash positions with value but no basis
+    realized: 0,
+    realizedLT: 0,
+    realizedST: 0,
+    realizedUnknownTerm: 0,
+    sellCount: 0,
+    sellsWithoutBasis: 0, // proposed sells whose gain can't be estimated
+  };
+  for (const acct of accounts) {
+    for (const h of acct.holdings) {
+      const isCash = CASH_TICKER_RE.test(h.ticker || '');
+      const mv = getMarketValue(h);
+      const unrealized = getUnrealizedGain(h);
+      if (unrealized != null) {
+        summary.unrealized += unrealized;
+        summary.positionsWithBasis += 1;
+      } else if (!isCash && mv > 0) {
+        summary.positionsWithoutBasis += 1;
+      }
+      const realized = getRealizedGain(h);
+      if (realized != null) {
+        summary.realized += realized.amount;
+        summary.sellCount += 1;
+        if (realized.term === true) summary.realizedLT += realized.amount;
+        else if (realized.term === false) summary.realizedST += realized.amount;
+        else summary.realizedUnknownTerm += realized.amount;
+      } else if (!isCash && (h.proposedChange || 0) < 0 && mv > 0 && !hasKnownBasis(h)) {
+        summary.sellsWithoutBasis += 1;
+      }
+    }
+  }
+  return summary;
+}
+
 export function getPortfolioTotal(accounts) {
   return accounts.reduce((sum, acct) => sum + getAccountTotal(acct.holdings), 0);
 }

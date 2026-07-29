@@ -27,7 +27,18 @@ function createEmptyHolding() {
     quantity: 0,
     price: 0,
     proposedChange: 0,
+    // Cost basis is OPTIONAL — 0/blank means "unknown"; gain columns render
+    // an em-dash rather than a misleading $0 gain. acquiredDate ('' = unknown)
+    // enables the short-term vs long-term split on realized gain estimates.
+    costBasis: 0,
+    acquiredDate: '',
   };
+}
+
+// Symbols we never send to Yahoo: cash placeholders ($$$$) and CUSIP-like
+// 9-char alphanumeric identifiers containing digits.
+function isFetchableSymbol(s) {
+  return !/^\$+$/.test(s) && !(/^[A-Z0-9]{9}$/.test(s) && /\d/.test(s));
 }
 
 function createEmptyAccount(id, name) {
@@ -80,6 +91,10 @@ export function AppProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('bp-theme') || 'light');
   const [priceDate, setPriceDate] = useState('March 4, 2026');
   const [priceLoading, setPriceLoading] = useState(false);
+  // Per-ticker live-quote freshness: { TICKER: { status, price?, date? } }.
+  // status: 'loading' | 'live' | 'failed'. No entry = only the static DB
+  // snapshot price has ever been used for that ticker (shown as stale).
+  const [quoteStatus, setQuoteStatus] = useState({});
   // Tier-1 name alerts from price refresh: { TICKER: liveName }. Not persisted.
   const [nameAlerts, setNameAlerts] = useState({});
   const hasFetchedPrices = useRef(false);
@@ -155,10 +170,21 @@ export function AppProvider({ children }) {
 
     try {
       const resp = await fetch(`/api/lookup?symbols=${encodeURIComponent(t)}`);
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        setQuoteStatus(prev => ({ ...prev, [t]: { status: 'failed' } }));
+        return null;
+      }
       const data = await resp.json();
       const result = data?.[t];
-      if (!result || result.error) return null;
+      if (!result || result.error) {
+        setQuoteStatus(prev => ({ ...prev, [t]: { status: 'failed' } }));
+        return null;
+      }
+
+      // Lookup prices come straight from Yahoo — record the row as live
+      if (result.price != null) {
+        setQuoteStatus(prev => ({ ...prev, [t]: { status: 'live', price: result.price, date: null } }));
+      }
 
       // Composite funds (target-date / allocation) can't be auto-classified —
       // don't cache them; the advisor must define a Custom Security.
@@ -177,6 +203,7 @@ export function AppProvider({ children }) {
       setResolvedSecurities(prev => ({ ...prev, [t]: entry }));
       return { source: 'lookup', ...entry };
     } catch {
+      setQuoteStatus(prev => ({ ...prev, [t]: { status: 'failed' } }));
       return null;
     }
   }, []);
@@ -360,6 +387,39 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  // Drag-and-drop reorder: move the holding at fromIndex to toIndex
+  const reorderHolding = useCallback((accountId, fromIndex, toIndex) => {
+    setAccounts(prev =>
+      prev.map(a => {
+        if (a.id !== accountId) return a;
+        if (
+          fromIndex === toIndex ||
+          fromIndex < 0 || fromIndex >= a.holdings.length ||
+          toIndex < 0 || toIndex >= a.holdings.length
+        ) return a;
+        const holdings = [...a.holdings];
+        const [moved] = holdings.splice(fromIndex, 1);
+        holdings.splice(toIndex, 0, moved);
+        return { ...a, holdings };
+      })
+    );
+  }, []);
+
+  // Drag-and-drop reorder for account tabs
+  const reorderAccount = useCallback((fromIndex, toIndex) => {
+    setAccounts(prev => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 || fromIndex >= prev.length ||
+        toIndex < 0 || toIndex >= prev.length
+      ) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, []);
+
   const moveHolding = useCallback((accountId, holdingId, direction) => {
     setAccounts(prev =>
       prev.map(a => {
@@ -424,12 +484,84 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  // Apply a /api/quotes response to all price stores: in-memory TICKER_DB,
+  // resolved securities, current holdings, per-ticker quote status, and the
+  // Tier-1 name audit. `requested` = every symbol we asked for, so symbols
+  // Yahoo skipped get marked 'failed' instead of silently staying stale.
+  const applyPriceMap = useCallback((priceMap, requested) => {
+    let latestDate = null;
+    for (const [symbol, data] of Object.entries(priceMap)) {
+      if (TICKER_DB[symbol]) {
+        TICKER_DB[symbol].price = data.price;
+      }
+      if (data.date && (!latestDate || data.date > latestDate)) {
+        latestDate = data.date;
+      }
+    }
+
+    // Tier-1 name audit: flag tickers whose live Yahoo name doesn't look
+    // like the stored name (override → TICKER_DB → resolved). Previously
+    // dismissed mismatches (same ticker + same live name) stay quiet.
+    const dismissals = readDismissals();
+    const newAlerts = {};
+    for (const [symbol, data] of Object.entries(priceMap)) {
+      if (!data.name) continue;
+      const resolved = resolvedRef.current[symbol];
+      const storedName = resolved?.override
+        ? resolved.name
+        : (TICKER_DB[symbol]?.name || resolved?.name);
+      if (!storedName) continue;
+      if (dismissals.includes(`${symbol}|name|${data.name}`)) continue;
+      if (nameSimilarity(storedName, data.name) < SIMILARITY_THRESHOLD) {
+        newAlerts[symbol] = data.name;
+      }
+    }
+    setNameAlerts(prev => ({ ...prev, ...newAlerts }));
+
+    // Update prices in resolved securities
+    setResolvedSecurities(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [symbol, data] of Object.entries(priceMap)) {
+        if (next[symbol]) {
+          next[symbol] = { ...next[symbol], price: data.price };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    // Update prices in existing holdings
+    setAccounts(prev => prev.map(acct => ({
+      ...acct,
+      holdings: acct.holdings.map(h => {
+        const updated = priceMap[h.ticker?.toUpperCase().trim()];
+        return updated ? { ...h, price: updated.price } : h;
+      }),
+    })));
+
+    // Freshness bookkeeping: got a quote → live; asked but got nothing → failed
+    setQuoteStatus(prev => {
+      const next = { ...prev };
+      for (const symbol of requested) {
+        const data = priceMap[symbol];
+        next[symbol] = data
+          ? { status: 'live', price: data.price, date: data.date || null }
+          : { status: 'failed' };
+      }
+      return next;
+    });
+
+    if (latestDate) {
+      const d = new Date(latestDate + 'T00:00:00');
+      setPriceDate(d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+    }
+  }, []);
+
   const refreshPrices = useCallback(async () => {
     setPriceLoading(true);
     try {
       // Only fetch tickers actually in use: current holdings + resolved securities.
-      // Skip cash placeholders ($$$$) and CUSIP-like identifiers (9-char
-      // alphanumerics containing digits) that Yahoo won't recognize.
       const symbols = new Set();
       for (const acct of accountsRef.current) {
         for (const h of acct.holdings) {
@@ -440,9 +572,7 @@ export function AppProvider({ children }) {
       for (const t of Object.keys(resolvedRef.current)) {
         symbols.add(t);
       }
-      const fetchable = [...symbols].filter(s =>
-        !/^\$+$/.test(s) && !(/^[A-Z0-9]{9}$/.test(s) && /\d/.test(s))
-      );
+      const fetchable = [...symbols].filter(isFetchableSymbol);
       if (fetchable.length === 0) {
         setPriceLoading(false);
         return;
@@ -450,69 +580,49 @@ export function AppProvider({ children }) {
       const resp = await fetch(`/api/quotes?symbols=${fetchable.join(',')}`);
       if (!resp.ok) throw new Error('API request failed');
       const priceMap = await resp.json();
-
-      // Update TICKER_DB in memory
-      let latestDate = null;
-      for (const [symbol, data] of Object.entries(priceMap)) {
-        if (TICKER_DB[symbol]) {
-          TICKER_DB[symbol].price = data.price;
-        }
-        if (data.date && (!latestDate || data.date > latestDate)) {
-          latestDate = data.date;
-        }
-      }
-
-      // Tier-1 name audit: flag tickers whose live Yahoo name doesn't look
-      // like the stored name (override → TICKER_DB → resolved). Previously
-      // dismissed mismatches (same ticker + same live name) stay quiet.
-      const dismissals = readDismissals();
-      const newAlerts = {};
-      for (const [symbol, data] of Object.entries(priceMap)) {
-        if (!data.name) continue;
-        const resolved = resolvedRef.current[symbol];
-        const storedName = resolved?.override
-          ? resolved.name
-          : (TICKER_DB[symbol]?.name || resolved?.name);
-        if (!storedName) continue;
-        if (dismissals.includes(`${symbol}|name|${data.name}`)) continue;
-        if (nameSimilarity(storedName, data.name) < SIMILARITY_THRESHOLD) {
-          newAlerts[symbol] = data.name;
-        }
-      }
-      setNameAlerts(prev => ({ ...prev, ...newAlerts }));
-
-      // Update prices in resolved securities
-      setResolvedSecurities(prev => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [symbol, data] of Object.entries(priceMap)) {
-          if (next[symbol]) {
-            next[symbol] = { ...next[symbol], price: data.price };
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-
-      // Update prices in existing holdings
-      setAccounts(prev => prev.map(acct => ({
-        ...acct,
-        holdings: acct.holdings.map(h => {
-          const updated = priceMap[h.ticker];
-          return updated ? { ...h, price: updated.price } : h;
-        }),
-      })));
-
-      if (latestDate) {
-        const d = new Date(latestDate + 'T00:00:00');
-        setPriceDate(d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
-      }
+      applyPriceMap(priceMap, fetchable);
     } catch {
-      // Fallback: keep static prices
+      // Static prices stay in place; mark in-use tickers as failed so rows
+      // show the "no live quote" indicator instead of silently looking fine.
+      const inUse = new Set();
+      for (const acct of accountsRef.current) {
+        for (const h of acct.holdings) {
+          const t = h.ticker?.toUpperCase().trim();
+          if (t && isFetchableSymbol(t)) inUse.add(t);
+        }
+      }
+      setQuoteStatus(prev => {
+        const next = { ...prev };
+        for (const t of inUse) {
+          if (next[t]?.status !== 'live') next[t] = { status: 'failed' };
+        }
+        return next;
+      });
     } finally {
       setPriceLoading(false);
     }
-  }, []);
+  }, [applyPriceMap]);
+
+  // Fetch a live quote for a single ticker — called whenever a ticker is
+  // entered on the Securities tab, so newly added rows never sit on the
+  // static DB snapshot price. Fire-and-forget; failures mark the row.
+  const fetchLiveQuote = useCallback(async (ticker) => {
+    const t = ticker?.toUpperCase().trim();
+    if (!t || !isFetchableSymbol(t)) return;
+    setQuoteStatus(prev => {
+      // Already in flight — don't double-fetch
+      if (prev[t]?.status === 'loading') return prev;
+      return { ...prev, [t]: { status: 'loading' } };
+    });
+    try {
+      const resp = await fetch(`/api/quotes?symbols=${encodeURIComponent(t)}`);
+      if (!resp.ok) throw new Error('quote failed');
+      const priceMap = await resp.json();
+      applyPriceMap(priceMap, [t]);
+    } catch {
+      setQuoteStatus(prev => ({ ...prev, [t]: { status: 'failed' } }));
+    }
+  }, [applyPriceMap]);
 
   // Auto-refresh on first mount
   useEffect(() => {
@@ -534,11 +644,12 @@ export function AppProvider({ children }) {
     activeTab, setActiveTab,
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,
-    addAccount, removeAccount, renameAccount, moveAccount,
-    updateHolding, addHolding, removeHolding, moveHolding, toggleSweep,
+    addAccount, removeAccount, renameAccount, moveAccount, reorderAccount,
+    updateHolding, addHolding, removeHolding, moveHolding, reorderHolding, toggleSweep,
     toggleManaged, sortHoldings,
     loadSession,
     priceDate, priceLoading, refreshPrices,
+    quoteStatus, fetchLiveQuote,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

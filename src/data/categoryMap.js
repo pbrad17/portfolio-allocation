@@ -86,30 +86,35 @@ export const CATEGORY_TO_STYLE = {
   // --- Taxable investment-grade bonds --------------------------------------
   'Intermediate Core Bond':      { style: 'Investment Grade', confidence: 'high' },
   'Intermediate Core-Plus Bond': { style: 'Investment Grade', confidence: 'high' },
-  'Short-Term Bond':             { style: 'Investment Grade', confidence: 'high' },
+  'Short-Term Bond':             { style: 'Short Duration Bonds', confidence: 'high' },
   // Advisor convention: T-bill / ultrashort ETFs (BIL, SGOV, SHV, JPST, MINT)
   // are treated as cash equivalents — flag for review since some ultrashort
-  // funds take modest credit risk.
+  // funds take modest credit risk (those belong in Short Duration Bonds).
   'Ultrashort Bond':             { style: 'Cash', confidence: 'review' },
   'Long-Term Bond':              { style: 'Investment Grade', confidence: 'high' },
   'Corporate Bond':              { style: 'Investment Grade', confidence: 'high' },
   'Long Government':             { style: 'Investment Grade', confidence: 'high' },
   'Intermediate Government':     { style: 'Investment Grade', confidence: 'high' },
-  'Short Government':            { style: 'Investment Grade', confidence: 'high' },
+  'Short Government':            { style: 'Short Duration Bonds', confidence: 'high' },
 
   // --- Municipal bonds ------------------------------------------------------
-  'Muni National Long':       { style: 'Investment Grade', confidence: 'review' },
-  'Muni National Interm':     { style: 'Investment Grade', confidence: 'review' },
-  'Muni National Short':      { style: 'Investment Grade', confidence: 'review' },
-  'Muni Single State Long':   { style: 'Investment Grade', confidence: 'review' },
-  'Muni Single State Interm': { style: 'Investment Grade', confidence: 'review' },
-  'Muni Single State Short':  { style: 'Investment Grade', confidence: 'review' },
-  'Muni Target Maturity':     { style: 'Investment Grade', confidence: 'review' },
+  // Dedicated Municipal Bonds sleeve as of 2026-07-29 (previously bucketed
+  // into Investment Grade). Muni Short stays high-confidence muni — the muni
+  // sleeve wins over duration for tax-exempt paper.
+  'Muni National Long':       { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni National Interm':     { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni National Short':      { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni Single State Long':   { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni Single State Interm': { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni Single State Short':  { style: 'Municipal Bonds', confidence: 'high' },
+  'Muni Target Maturity':     { style: 'Municipal Bonds', confidence: 'review' },
 
   // --- High yield ------------------------------------------------------------
   'High Yield Bond': { style: 'High Yield', confidence: 'high' },
   'Bank Loan':       { style: 'High Yield', confidence: 'review' },
-  'High Yield Muni': { style: 'High Yield', confidence: 'review' },
+  // HY muni is tax-exempt first, high-yield second — muni sleeve, but flag
+  // for review since some advisors prefer it in High Yield.
+  'High Yield Muni': { style: 'Municipal Bonds', confidence: 'review' },
 
   // --- Other fixed income -----------------------------------------------------
   'Inflation-Protected Bond':              { style: 'TIPS',              confidence: 'high' },
@@ -148,7 +153,8 @@ const REGEX_FALLBACKS = [
   { pattern: /^Target-Date/i,                                                    result: COMPOSITE },
   { pattern: /^(Allocation|Moderately|World Allocation|Global Allocation)/i,     result: COMPOSITE },
   { pattern: /^(Conservative|Moderate|Aggressive|Tactical) Allocation/i,         result: COMPOSITE },
-  { pattern: /Muni/i,                 result: { style: 'Investment Grade', confidence: 'review' } },
+  { pattern: /Muni/i,                 result: { style: 'Municipal Bonds', confidence: 'review' } },
+  { pattern: /Short[- ]?(Term|Duration)/i, result: { style: 'Short Duration Bonds', confidence: 'review' } },
   { pattern: /Money Market/i,         result: { style: 'Cash',             confidence: 'high' } },
   { pattern: /Emerging/i,             result: { style: 'Emerging Markets', confidence: 'review' } },
   { pattern: /Real Estate/i,          result: { style: 'Real Estate',      confidence: 'review' } },
@@ -170,10 +176,11 @@ const NAME_RULES = [
   { re: /inflation[ -]?protected|\btips\b/i,                        style: 'TIPS' },
   { re: /high[ -]?yield/i,                                          style: 'High Yield' },
   { re: /floating rate|bank loan|senior loan/i,                     style: 'High Yield' },
-  { re: /\bmuni(cipal)?\b/i,                                        style: 'Investment Grade' },
+  { re: /\bmuni(cipal)?\b/i,                                        style: 'Municipal Bonds' },
   { re: /emerging market/i,                                         style: 'Emerging Markets' },
   { re: /(international|foreign|world|global|ex[ -]?us|eafe).*(bond|fixed income|debt)|(bond|fixed income).*(international|global|world)/i, style: 'Foreign Bonds' },
-  { re: /(short|ultra ?short|intermediate|long)[ -]?(term|duration)?[ -]?(bond|fixed income|treasury|government|corporate)|(core|total|aggregate|corporate|government|investment[ -]?grade|securitized) (bond|fixed income)|bond (fund|etf|index|market)/i, style: 'Investment Grade' },
+  { re: /(short|ultra ?short)[ -]?(term|duration)?[ -]?(bond|fixed income|treasury|government|corporate)/i, style: 'Short Duration Bonds' },
+  { re: /(intermediate|long)[ -]?(term|duration)?[ -]?(bond|fixed income|treasury|government|corporate)|(core|total|aggregate|corporate|government|investment[ -]?grade|securitized) (bond|fixed income)|bond (fund|etf|index|market)/i, style: 'Investment Grade' },
   { re: /real estate|\breit\b/i,                                    style: 'Real Estate' },
   { re: /commodit|\bgold\b|\bsilver\b|precious metals/i,            style: 'Commodities' },
   { re: /covered call|buffer|hedged equity|managed futures|market neutral|long[ -\/]?short|merger|arbitrage|defined outcome/i, style: 'Hedge Funds' },

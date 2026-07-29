@@ -167,7 +167,7 @@ function classify(meta, summary, name) {
     const stockPos = raw(th.stockPosition);
 
     if (byName) {
-      const BOND_STYLES = ['Investment Grade', 'TIPS', 'Foreign Bonds', 'High Yield', 'Multisector Bonds', 'Cash'];
+      const BOND_STYLES = ['Investment Grade', 'Municipal Bonds', 'Short Duration Bonds', 'TIPS', 'Foreign Bonds', 'High Yield', 'Multisector Bonds', 'Cash'];
       const nameSaysBond = BOND_STYLES.includes(byName.style);
       // Contradiction between name and actual holdings → don't guess
       const contradicts =

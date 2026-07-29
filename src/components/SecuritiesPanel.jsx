@@ -2,7 +2,10 @@ import { useState, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { TICKER_DB } from '../data/tickerDb';
 import { STYLE_OPTIONS, STYLE_TO_CATEGORY } from '../data/styleMapping';
-import { getMarketValue, getPostValue, getAccountTotal } from '../utils/calculations';
+import {
+  getMarketValue, getPostValue, getAccountTotal,
+  getUnrealizedGain, getRealizedGain, getGainSummary, hasKnownBasis, isLongTerm,
+} from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
 
 function formatWithCommas(value, decimals = 2) {
@@ -53,32 +56,73 @@ function NumericInput({ value, onChange, className, placeholder, decimals = 2 })
 }
 
 // Pixel widths sized to the original compact inputs; Security Name (no width)
-// absorbs the remaining table width.
+// absorbs the remaining table width. First column is the drag handle.
 const HOLDING_COLS = [
+  { label: '', key: 'drag',   width: '28px',  align: 'left' },
   { label: 'Ticker',          width: '100px', align: 'left',  sort: h => h.ticker },
   { label: 'Security Name',   width: '280px', align: 'left',  sort: h => h.securityName },
   { label: 'Investment Style', width: '196px', align: 'left',  sort: h => h.style },
   { label: 'Quantity',        width: '112px', align: 'right', sort: h => h.quantity || 0, numeric: true },
   { label: 'Price',           width: '112px', align: 'right', sort: h => h.price || 0, numeric: true },
   { label: 'Market Value',    width: '110px', align: 'right', sort: h => getMarketValue(h), numeric: true },
+  { label: 'Cost Basis',      width: '118px', align: 'right', sort: h => h.costBasis || 0, numeric: true },
+  { label: 'Unrl. G/L',       width: '104px', align: 'right', sort: h => getUnrealizedGain(h), numeric: true },
   { label: 'Proposed Change', width: '130px', align: 'right', sort: h => h.proposedChange || 0, numeric: true },
   { label: 'Post Value',      width: '110px', align: 'right', sort: h => getPostValue(h), numeric: true },
   { label: '% of Acct',       width: '72px',  align: 'right', sort: h => getPostValue(h), numeric: true },
-  { label: '',                width: '148px', align: 'left' },
+  { label: '', key: 'actions', width: '148px', align: 'left' },
 ];
 
-function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn }) {
+// Freshness dot next to the price input. No entry in quoteStatus = the price
+// came from the static DB snapshot and has never been confirmed live.
+function PriceFreshnessDot({ status, hasPrice }) {
+  if (status?.status === 'loading') {
+    return <span className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2 h-2 rounded-full bg-steel-blue animate-pulse" title="Fetching live quote..." />;
+  }
+  if (status?.status === 'live') {
+    return (
+      <span
+        className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2 h-2 rounded-full bg-positive"
+        title={`Live Yahoo Finance quote${status.date ? ` — as of ${status.date}` : ''}`}
+      />
+    );
+  }
+  if (status?.status === 'failed') {
+    return (
+      <span
+        className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2 h-2 rounded-full bg-negative"
+        title="No live quote available — this price may be stale. Verify the ticker or click Refresh Prices to retry."
+      />
+    );
+  }
+  if (hasPrice) {
+    return (
+      <span
+        className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2 h-2 rounded-full bg-amber-400"
+        title="Static snapshot price — not yet confirmed against a live quote. Click Refresh Prices."
+      />
+    );
+  }
+  return null;
+}
+
+function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn, dragProps }) {
   const {
     updateHolding, removeHolding, moveHolding,
     customSecurities, addCustomSecurity, updateCustomSecurity,
     resolvedSecurities, resolveTicker, verifyResolved,
     nameAlerts, dismissNameAlert, setDbOverride,
+    quoteStatus, fetchLiveQuote,
   } = useAppContext();
   const [notFound, setNotFound] = useState(false);
   const [lookupState, setLookupState] = useState(null); // null | 'loading' | 'composite'
   const [justVerified, setJustVerified] = useState(false);
+  // Row is only draggable while the pointer is down on the grip handle, so
+  // text selection inside the inputs keeps working normally.
+  const [dragReady, setDragReady] = useState(false);
 
   const ticker = holding.ticker?.toUpperCase().trim();
+  const isQuotable = !!ticker && !/^\$+$/.test(ticker) && !(/^[A-Z0-9]{9}$/.test(ticker) && /\d/.test(ticker));
   const dbEntry = ticker ? TICKER_DB[ticker] : null;
   const csEntry = ticker ? customSecurities[ticker] : null;
   const isCustomStyle = holding.style?.startsWith('Custom: ');
@@ -147,6 +191,11 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
   const mv = getMarketValue(holding);
   const pv = getPostValue(holding);
   const pctOfAccount = accountTotal > 0 ? pv / accountTotal : 0;
+  const unrealized = getUnrealizedGain(holding);
+  const realized = getRealizedGain(holding);
+  const unrealizedPct = unrealized != null && holding.costBasis > 0 ? unrealized / holding.costBasis : null;
+  const holdingTerm = isLongTerm(holding.acquiredDate); // true LT / false ST / null unknown
+  const isCashRow = /^\$+$/.test(ticker || '');
 
   const handleTickerBlur = async () => {
     const ticker = holding.ticker.toUpperCase().trim();
@@ -159,6 +208,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
     if (cs) {
       updateHolding(accountId, holding.id, 'securityName', cs.name);
       updateHolding(accountId, holding.id, 'style', `Custom: ${ticker}`);
+      fetchLiveQuote(ticker); // custom securities still get a live price
       return;
     }
     const known = resolvedSecurities[ticker];
@@ -167,6 +217,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
       if (known.name != null) updateHolding(accountId, holding.id, 'securityName', known.name);
       if (known.style != null) updateHolding(accountId, holding.id, 'style', known.style);
       if (known.price != null) updateHolding(accountId, holding.id, 'price', known.price);
+      fetchLiveQuote(ticker);
       return;
     }
     const info = TICKER_DB[ticker];
@@ -174,12 +225,17 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
       updateHolding(accountId, holding.id, 'securityName', info.name);
       updateHolding(accountId, holding.id, 'style', info.style);
       updateHolding(accountId, holding.id, 'price', info.price);
+      // The static DB price is only an instant placeholder — always confirm
+      // with a live quote so known tickers (e.g. UNH) never sit on a stale
+      // snapshot price. The quote also updates this row when it lands.
+      fetchLiveQuote(ticker);
       return;
     }
     if (known) {
       updateHolding(accountId, holding.id, 'securityName', known.name);
       updateHolding(accountId, holding.id, 'style', known.style);
       updateHolding(accountId, holding.id, 'price', known.price);
+      fetchLiveQuote(ticker);
       return;
     }
 
@@ -208,7 +264,24 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
   };
 
   return (
-    <tr className="border-b border-border-light hover:bg-alt-bg/50">
+    <tr
+      className={`border-b border-border-light hover:bg-alt-bg/50 ${dragProps?.isDropTarget ? 'border-t-2 border-t-accent' : ''} ${dragProps?.isDragging ? 'opacity-40' : ''}`}
+      draggable={dragReady}
+      onDragStart={e => { dragProps?.onDragStart?.(e); }}
+      onDragEnd={() => { setDragReady(false); dragProps?.onDragEnd?.(); }}
+      onDragOver={dragProps?.onDragOver}
+      onDrop={dragProps?.onDrop}
+    >
+      <td className="px-1 py-1 text-center">
+        <span
+          onMouseDown={() => setDragReady(true)}
+          onMouseUp={() => setDragReady(false)}
+          className="cursor-grab active:cursor-grabbing text-steel-blue/50 hover:text-steel-blue select-none text-sm leading-none"
+          title="Drag to reorder"
+        >
+          ⠿
+        </span>
+      </td>
       <td className="px-2 py-1">
         <div className="relative">
           <input
@@ -298,14 +371,67 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
         />
       </td>
       <td className="px-2 py-1">
-        <NumericInput
-          value={holding.price}
-          onChange={v => updateHolding(accountId, holding.id, 'price', v)}
-          className="w-24 block ml-auto bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
-          placeholder="0.00"
-        />
+        <div className="relative w-24 ml-auto">
+          <NumericInput
+            value={holding.price}
+            onChange={v => updateHolding(accountId, holding.id, 'price', v)}
+            className="w-24 block bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
+            placeholder="0.00"
+          />
+          {isQuotable && (
+            <PriceFreshnessDot status={quoteStatus[ticker]} hasPrice={(holding.price || 0) > 0} />
+          )}
+        </div>
       </td>
       <td className="px-2 py-1 text-sm text-right">{formatCurrency(mv)}</td>
+      <td className="px-2 py-1">
+        {!isCashRow && (
+          <div>
+            <NumericInput
+              value={holding.costBasis}
+              onChange={v => updateHolding(accountId, holding.id, 'costBasis', v)}
+              className="w-24 block ml-auto bg-input-teal/20 border border-border text-text-primary px-2 py-1 rounded text-sm text-right focus:outline-none focus:border-accent"
+              placeholder="—"
+            />
+            {hasKnownBasis(holding) && (
+              <input
+                type="date"
+                value={holding.acquiredDate || ''}
+                onChange={e => updateHolding(accountId, holding.id, 'acquiredDate', e.target.value)}
+                className="w-24 block ml-auto mt-0.5 bg-transparent border border-transparent text-text-primary/50 px-1 rounded text-[10px] text-right hover:border-border focus:border-accent focus:outline-none"
+                title="Acquisition date (optional) — enables the short-term vs long-term split on realized gain estimates"
+              />
+            )}
+          </div>
+        )}
+      </td>
+      <td className="px-2 py-1 text-sm text-right">
+        {unrealized == null ? (
+          <span
+            className="text-text-primary/30"
+            title={isCashRow ? undefined : 'No cost basis entered — unrealized gain/loss unavailable'}
+          >
+            {isCashRow ? '' : '—'}
+          </span>
+        ) : (
+          <span
+            className={unrealized > 0.005 ? 'text-positive' : unrealized < -0.005 ? 'text-negative' : ''}
+            title={
+              `Unrealized ${unrealized >= 0 ? 'gain' : 'loss'}: ${formatCurrency(unrealized)}` +
+              (unrealizedPct != null ? ` (${formatPercent(unrealizedPct)})` : '') +
+              (holdingTerm != null ? ` — ${holdingTerm ? 'long-term' : 'short-term'} if sold today` : '') +
+              (realized != null ? `\nProposed sell realizes ≈ ${formatCurrency(realized.amount)} (${realized.term === true ? 'long-term' : realized.term === false ? 'short-term' : 'holding period unknown'})` : '')
+            }
+          >
+            {formatCurrency(unrealized)}
+            {realized != null && (
+              <span className="block text-[10px] text-text-primary/50 leading-tight">
+                sell: {formatCurrency(realized.amount)} {realized.term === true ? 'LT' : realized.term === false ? 'ST' : ''}
+              </span>
+            )}
+          </span>
+        )}
+      </td>
       <td
         className="px-2 py-1"
         title={sweepOn && holding.ticker === '$$$$'
@@ -372,12 +498,15 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
 }
 
 function AccountTab({ account }) {
-  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep, toggleManaged, sortHoldings } = useAppContext();
+  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep, toggleManaged, sortHoldings, reorderHolding } = useAppContext();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(account.name);
   // Last sort applied via header click: { label, ascending } — indicator only;
   // the sort physically reorders holdings (Excel-style), so manual moves remain valid.
   const [lastSort, setLastSort] = useState(null);
+  // Row drag-and-drop state (indexes into account.holdings)
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
 
   const handleSort = (col) => {
     if (!col.sort) return;
@@ -391,6 +520,8 @@ function AccountTab({ account }) {
   const marketTotal = account.holdings.reduce((s, h) => s + getMarketValue(h), 0);
   const changeTotal = account.holdings.reduce((s, h) => s + (h.proposedChange || 0), 0);
   const isBalanced = Math.abs(changeTotal) < 0.005;
+  const basisTotal = account.holdings.reduce((s, h) => s + (hasKnownBasis(h) ? h.costBasis : 0), 0);
+  const gains = getGainSummary([account]);
 
   const saveName = () => {
     renameAccount(account.id, editName || account.name);
@@ -460,14 +591,14 @@ function AccountTab({ account }) {
         <table className="text-sm" style={{ tableLayout: 'fixed', width: 'max-content' }}>
           <colgroup>
             {HOLDING_COLS.map(col => (
-              <col key={col.label || 'actions'} style={{ width: col.width }} />
+              <col key={col.key || col.label} style={{ width: col.width }} />
             ))}
           </colgroup>
           <thead>
             <tr className="bg-header-bg">
               {HOLDING_COLS.map(col => (
                 <th
-                  key={col.label || 'actions'}
+                  key={col.key || col.label}
                   onClick={() => handleSort(col)}
                   className={`px-2 py-2 text-xs font-medium text-text-primary/90 whitespace-nowrap text-${col.align} ${col.sort ? 'cursor-pointer hover:text-accent select-none' : ''}`}
                   title={col.sort ? `Sort by ${col.label} (click again to reverse)` : undefined}
@@ -490,13 +621,51 @@ function AccountTab({ account }) {
                 isFirst={idx === 0}
                 isLast={idx === account.holdings.length - 1}
                 sweepOn={!!account.sweepToCash}
+                dragProps={{
+                  isDragging: dragIdx === idx,
+                  isDropTarget: overIdx === idx && dragIdx !== null && dragIdx !== idx,
+                  onDragStart: (e) => {
+                    setDragIdx(idx);
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', String(idx)); } catch { /* IE */ }
+                  },
+                  onDragEnd: () => { setDragIdx(null); setOverIdx(null); },
+                  onDragOver: (e) => {
+                    if (dragIdx == null) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (overIdx !== idx) setOverIdx(idx);
+                  },
+                  onDrop: (e) => {
+                    e.preventDefault();
+                    if (dragIdx != null && dragIdx !== idx) reorderHolding(account.id, dragIdx, idx);
+                    setDragIdx(null);
+                    setOverIdx(null);
+                  },
+                }}
               />
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-accent bg-dark-bg font-semibold">
-              <td colSpan={5} className="px-2 py-2 text-accent">Account Total</td>
+              <td colSpan={6} className="px-2 py-2 text-accent">Account Total</td>
               <td className="px-2 py-2 text-right">{formatCurrency(marketTotal)}</td>
+              <td
+                className="px-2 py-2 text-right"
+                title={gains.positionsWithoutBasis > 0
+                  ? `Cost basis entered for ${gains.positionsWithBasis} of ${gains.positionsWithBasis + gains.positionsWithoutBasis} positions — total covers entered positions only`
+                  : 'Total cost basis (entered positions)'}
+              >
+                {basisTotal > 0 ? formatCurrency(basisTotal) : ''}
+              </td>
+              <td
+                className={`px-2 py-2 text-right ${gains.unrealized > 0.005 ? 'text-positive' : gains.unrealized < -0.005 ? 'text-negative' : ''}`}
+                title={gains.positionsWithBasis > 0
+                  ? `Unrealized gain/loss across the ${gains.positionsWithBasis} position(s) with basis entered`
+                  : undefined}
+              >
+                {gains.positionsWithBasis > 0 ? formatCurrency(gains.unrealized) : ''}
+              </td>
               <td
                 className={`px-2 py-2 text-right ${isBalanced ? 'text-positive' : 'text-accent'}`}
                 title={isBalanced ? 'Net proposed change is zero — fully rebalanced' : 'Net proposed change — money entering (+) or leaving (−) the account'}
@@ -507,6 +676,26 @@ function AccountTab({ account }) {
               <td className="px-2 py-2 text-right">100.0%</td>
               <td></td>
             </tr>
+            {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
+              <tr className="bg-dark-bg/60">
+                <td colSpan={HOLDING_COLS.length} className="px-2 py-1.5 text-xs text-steel-blue">
+                  Proposed sells realize ≈{' '}
+                  <span className={gains.realized >= 0 ? 'text-positive font-semibold' : 'text-negative font-semibold'}>
+                    {formatCurrency(gains.realized)}
+                  </span>
+                  {' '}in this account
+                  {(gains.realizedLT !== 0 || gains.realizedST !== 0) && (
+                    <> ({formatCurrency(gains.realizedLT)} long-term / {formatCurrency(gains.realizedST)} short-term
+                    {gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})</>
+                  )}
+                  {gains.sellsWithoutBasis > 0 && (
+                    <span className="text-negative/80">
+                      {' '}— {gains.sellsWithoutBasis} proposed sell{gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis (not included)
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>
@@ -522,15 +711,43 @@ function AccountTab({ account }) {
 }
 
 export default function SecuritiesPanel() {
-  const { accounts, addAccount, moveAccount } = useAppContext();
+  const { accounts, addAccount, moveAccount, reorderAccount } = useAppContext();
   const [activeAccountId, setActiveAccountId] = useState(accounts[0]?.id);
+  // Account-tab drag-and-drop state (indexes into accounts)
+  const [tabDragIdx, setTabDragIdx] = useState(null);
+  const [tabOverIdx, setTabOverIdx] = useState(null);
   const activeAccount = accounts.find(a => a.id === activeAccountId) || accounts[0];
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {accounts.map((a, idx) => (
-          <div key={a.id} className="flex items-center">
+          <div
+            key={a.id}
+            className={`flex items-center ${tabDragIdx === idx ? 'opacity-40' : ''} ${
+              tabOverIdx === idx && tabDragIdx !== null && tabDragIdx !== idx ? 'border-l-2 border-accent' : ''
+            }`}
+            draggable
+            onDragStart={e => {
+              setTabDragIdx(idx);
+              e.dataTransfer.effectAllowed = 'move';
+              try { e.dataTransfer.setData('text/plain', String(idx)); } catch { /* IE */ }
+            }}
+            onDragEnd={() => { setTabDragIdx(null); setTabOverIdx(null); }}
+            onDragOver={e => {
+              if (tabDragIdx == null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (tabOverIdx !== idx) setTabOverIdx(idx);
+            }}
+            onDrop={e => {
+              e.preventDefault();
+              if (tabDragIdx != null && tabDragIdx !== idx) reorderAccount(tabDragIdx, idx);
+              setTabDragIdx(null);
+              setTabOverIdx(null);
+            }}
+            title="Drag to reorder accounts"
+          >
             {a.id === activeAccount?.id && idx > 0 && (
               <button
                 onClick={() => moveAccount(a.id, -1)}
