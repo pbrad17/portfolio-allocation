@@ -236,10 +236,14 @@ export default function PieChartWidget({ visible = true }) {
     [accounts, targetProfile, customSecurities]
   );
 
+  // Use own-only percentages so a rollup parent (Investment Grade) and its
+  // sub-rows (Municipal Bonds) appear as separate slices without double-
+  // counting the parent's combined display value.
   const pctKey = effectiveScope === 'managed' ? 'portfolioPct' : 'overallPct';
+  const ownKey = effectiveScope === 'managed' ? 'ownPortfolioPct' : 'ownOverallPct';
   const pieData = rows
-    .filter(r => r[pctKey] > 0)
-    .map(r => ({ name: r.category, value: r[pctKey] }));
+    .map(r => ({ name: r.category, value: r[ownKey] ?? r[pctKey] }))
+    .filter(d => d.value > 0);
 
   return (
     <div

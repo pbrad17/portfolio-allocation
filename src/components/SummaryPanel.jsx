@@ -34,12 +34,21 @@ function DiffCell({ value }) {
 function SummaryRow({ row, bgClass, cols }) {
   return (
     <tr className={bgClass}>
-      <td className="px-3 py-1.5 text-sm">{row.category}</td>
+      {row.subRow ? (
+        <td
+          className="px-3 py-1.5 text-sm pl-8 text-text-primary/60 italic"
+          title={`Included in the ${row.rollsInto} row above — shown for visibility, not double-counted`}
+        >
+          incl. {row.category}
+        </td>
+      ) : (
+        <td className="px-3 py-1.5 text-sm">{row.category}</td>
+      )}
       {cols.map(col =>
         col.key === 'difference' ? (
           <DiffCell key={col.key} value={row.difference} />
         ) : (
-          <td key={col.key} className="px-3 py-1.5 text-right text-sm">{col.getter(row)}</td>
+          <td key={col.key} className={`px-3 py-1.5 text-right text-sm ${row.subRow ? 'text-text-primary/60 italic' : ''}`}>{col.getter(row)}</td>
         )
       )}
     </tr>
@@ -113,14 +122,17 @@ export default function SummaryPanel() {
     { name: 'Alternatives', categories: SUMMARY_SECTIONS.Alternatives },
   ];
 
+  // Sub-rows are already inside their parent's combined figures — grand
+  // totals sum main rows only to avoid double-counting
+  const mainRows = rows.filter(r => !r.subRow);
   const grandTotal = {
     portfolioDollar: total,
-    portfolioPct: rows.reduce((s, r) => s + r.portfolioPct, 0),
+    portfolioPct: mainRows.reduce((s, r) => s + r.portfolioPct, 0),
     overallDollar: overallTotal,
-    overallPct: rows.reduce((s, r) => s + r.overallPct, 0),
-    targetPct: rows.reduce((s, r) => s + r.targetPct, 0),
-    reallocation: rows.reduce((s, r) => s + r.reallocation, 0),
-    difference: rows.reduce((s, r) => s + r.portfolioPct, 0) - rows.reduce((s, r) => s + r.targetPct, 0),
+    overallPct: mainRows.reduce((s, r) => s + r.overallPct, 0),
+    targetPct: mainRows.reduce((s, r) => s + r.targetPct, 0),
+    reallocation: mainRows.reduce((s, r) => s + r.reallocation, 0),
+    difference: mainRows.reduce((s, r) => s + r.portfolioPct, 0) - mainRows.reduce((s, r) => s + r.targetPct, 0),
   };
 
   return (
@@ -190,7 +202,7 @@ export default function SummaryPanel() {
 
           {rows.some(r => r.rollsInto && (r.portfolioDollar !== 0 || r.overallDollar !== 0)) && (
             <p className="mt-2 text-xs text-steel-blue/70">
-              Municipal Bonds count toward the Investment Grade target — the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+              The Investment Grade row includes Municipal Bonds; the indented "incl." row breaks out the municipal portion and is not double-counted in totals.
             </p>
           )}
 

@@ -134,14 +134,17 @@ function getVisibleCapCols(includeCapColumns) {
 function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData, accounts, chartImage, theme, includeSections, includeColumns, includeSummaryColumns, includeCapColumns, showZeroRows, sectionOrder, summaryColOrder, expenseData, expenseCacheEmpty }) {
   const c = PALETTES[theme] || PALETTES.light;
   const s = stylesCache[theme] || stylesCache.light;
+  // Sub-rows (e.g. Municipal Bonds under Investment Grade) are already
+  // inside their parent's combined figures — totals sum main rows only
+  const mainRows = summaryRows.filter(r => !r.subRow);
   const grandTotal = {
     portfolioDollar: summaryTotal,
-    portfolioPct: summaryRows.reduce((s, r) => s + r.portfolioPct, 0),
-    overallDollar: summaryRows.reduce((s, r) => s + r.overallDollar, 0),
-    overallPct: summaryRows.reduce((s, r) => s + r.overallPct, 0),
-    targetPct: summaryRows.reduce((s, r) => s + r.targetPct, 0),
-    reallocation: summaryRows.reduce((s, r) => s + r.reallocation, 0),
-    difference: summaryRows.reduce((s, r) => s + r.portfolioPct, 0) - summaryRows.reduce((s, r) => s + r.targetPct, 0),
+    portfolioPct: mainRows.reduce((s, r) => s + r.portfolioPct, 0),
+    overallDollar: mainRows.reduce((s, r) => s + r.overallDollar, 0),
+    overallPct: mainRows.reduce((s, r) => s + r.overallPct, 0),
+    targetPct: mainRows.reduce((s, r) => s + r.targetPct, 0),
+    reallocation: mainRows.reduce((s, r) => s + r.reallocation, 0),
+    difference: mainRows.reduce((s, r) => s + r.portfolioPct, 0) - mainRows.reduce((s, r) => s + r.targetPct, 0),
   };
 
   const sumCols = getVisibleSumCols(includeSummaryColumns, summaryColOrder);
@@ -176,11 +179,12 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
   function renderSumRow(row, idx) {
     const diffC = diffColor(row.difference);
+    const subStyle = row.subRow ? { color: c.steelBlue } : {};
     return (
       <View key={row.category} style={[s.row, idx % 2 === 0 ? s.rowEven : s.rowAlt]} wrap={false}>
         {sumCols.map(col => (
-          <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, cellGutter(col.align), col.key === 'difference' && diffC ? { color: diffC } : {}]}>
-            {sumValGetters[col.key](row)}
+          <Text key={col.key} style={[s.cell, { width: col.width, textAlign: col.align }, cellGutter(col.align), subStyle, col.key === 'category' && row.subRow ? { paddingLeft: 14 } : {}, col.key === 'difference' && diffC ? { color: diffC } : {}]}>
+            {col.key === 'category' && row.subRow ? `incl. ${row.category}` : sumValGetters[col.key](row)}
           </Text>
         ))}
       </View>
@@ -332,7 +336,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
         {hasRollupRows && (
           <Text style={{ fontSize: 6.5, color: c.steelBlue, marginTop: 4, paddingHorizontal: 4 }}>
-            Municipal Bonds count toward the Investment Grade target; the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+            The Investment Grade row includes Municipal Bonds; the indented "incl." row breaks out the municipal portion and is not double-counted in totals.
           </Text>
         )}
 

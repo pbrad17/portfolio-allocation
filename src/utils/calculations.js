@@ -156,16 +156,23 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
     const overallPct = overallTotal > 0 ? overallDollar / overallTotal : 0;
 
     // Target rollup: child categories (e.g. Municipal Bonds → Investment
-    // Grade) display their own $ / % but carry NO target columns of their
-    // own — the parent row's target math runs on parent + children combined,
-    // so the reallocation column never suggests swapping between them.
+    // Grade) render as INDENTED SUB-ROWS under their parent: they display
+    // their own $ / % for visibility but carry no target columns, and the
+    // parent row displays the COMBINED position so its Portfolio % reads
+    // consistently against its target. Section/grand totals and the pie
+    // chart must not double-count: totals skip subRow rows (the parent's
+    // combined figures already include them), and the pie uses the own*
+    // fields so parent and child appear as separate, non-overlapping slices.
     if (TARGET_ROLLUP[cat]) {
       rows.push({
         category: cat,
+        subRow: true,
         portfolioDollar,
         portfolioPct,
         overallDollar,
         overallPct,
+        ownPortfolioPct: portfolioPct,
+        ownOverallPct: overallPct,
         targetPct: null,
         reallocation: null,
         difference: null,
@@ -177,6 +184,8 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
     const children = Object.keys(TARGET_ROLLUP).filter(child => TARGET_ROLLUP[child] === cat);
     const combinedDollar = portfolioDollar + children.reduce((s, child) => s + (categoryTotals[child] || 0), 0);
     const combinedPct = total > 0 ? combinedDollar / total : 0;
+    const combinedOverallDollar = overallDollar + children.reduce((s, child) => s + (overallCategoryTotals[child] || 0), 0);
+    const combinedOverallPct = overallTotal > 0 ? combinedOverallDollar / overallTotal : 0;
 
     const targetPct = targetProfile[cat] || 0;
     const reallocation = total > 0 ? (targetPct - combinedPct) * total : 0;
@@ -184,10 +193,14 @@ export function getSummaryData(accounts, targetProfile, customSecurities = {}) {
 
     rows.push({
       category: cat,
-      portfolioDollar,
-      portfolioPct,
-      overallDollar,
-      overallPct,
+      // Display values: combined when this category has rollup children
+      portfolioDollar: children.length > 0 ? combinedDollar : portfolioDollar,
+      portfolioPct: children.length > 0 ? combinedPct : portfolioPct,
+      overallDollar: children.length > 0 ? combinedOverallDollar : overallDollar,
+      overallPct: children.length > 0 ? combinedOverallPct : overallPct,
+      // Own-only values (pie chart slices, breakdowns)
+      ownPortfolioPct: portfolioPct,
+      ownOverallPct: overallPct,
       targetPct,
       reallocation,
       difference,
@@ -202,7 +215,9 @@ export function getSectionTotal(rows, categories) {
   return categories.reduce(
     (acc, cat) => {
       const row = rows.find(r => r.category === cat);
-      if (row) {
+      // Sub-rows are already inside their parent's combined figures —
+      // adding them again would double-count
+      if (row && !row.subRow) {
         acc.portfolioDollar += row.portfolioDollar;
         acc.portfolioPct += row.portfolioPct;
         acc.overallDollar += row.overallDollar;
