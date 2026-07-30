@@ -332,7 +332,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
 
         {hasRollupRows && (
           <Text style={{ fontSize: 6.5, color: c.steelBlue, marginTop: 4, paddingHorizontal: 4 }}>
-            Municipal Bonds and Short Duration Bonds count toward the Investment Grade target; the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+            Municipal Bonds count toward the Investment Grade target; the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
           </Text>
         )}
 

@@ -272,9 +272,12 @@ export function getCapitalizationData(accounts, targetProfile) {
     const postTotal = outputStyles.reduce((s, st) => s + (postByStyle[st] || 0), 0);
 
     // Cap split: Large 50%, Mid 30%, Small 20%
-    // Within each: Value 50%, Growth 50%
+    // Within each: Value 60%, Growth 40% — reflects the March 2026 model's
+    // dedicated value sleeves (22% of domestic equity, 20% of foreign;
+    // core All Cap counted 50/50 ≈ 61/39 & 60/40, advisor rounded both to
+    // 60/40 on 2026-07-29)
     const capSplit = { Large: 0.5, Mid: 0.3, Small: 0.2 };
-    const styleSplit = { Value: 0.5, Growth: 0.5 };
+    const styleSplit = { Value: 0.6, Growth: 0.4 };
 
     const rows = outputStyles.map(style => {
       const parts = style.split(' ');
@@ -324,8 +327,10 @@ export function getCapitalizationData(accounts, targetProfile) {
   const equityTargetTotal = domesticTarget + foreignTarget;
 
   function applyEquityPcts(section, sectionTarget) {
+    // Keep in sync with calcSection above (60/40 Value/Growth per the
+    // March 2026 model's value tilt)
     const capSplit = { Large: 0.5, Mid: 0.3, Small: 0.2 };
-    const styleSplit = { Value: 0.5, Growth: 0.5 };
+    const styleSplit = { Value: 0.6, Growth: 0.4 };
 
     for (const row of section.rows) {
       const parts = row.fullStyle.split(' ');

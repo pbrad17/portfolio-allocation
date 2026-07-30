@@ -190,7 +190,7 @@ export default function SummaryPanel() {
 
           {rows.some(r => r.rollsInto && (r.portfolioDollar !== 0 || r.overallDollar !== 0)) && (
             <p className="mt-2 text-xs text-steel-blue/70">
-              Municipal Bonds and Short Duration Bonds count toward the Investment Grade target — the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
+              Municipal Bonds count toward the Investment Grade target — the Investment Grade row's Target / Reallocation / Difference reflect the combined position.
             </p>
           )}
 

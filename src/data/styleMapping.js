@@ -45,11 +45,11 @@ export const STYLE_TO_ASSET_CLASS = Object.fromEntries(
 
 export const SUMMARY_SECTIONS = {
   Equities: ["Domestic", "Foreign", "Emerging Markets", "Real Estate", "Other Equity"],
-  // NOTE: Municipal Bonds and Short Duration Bonds display as their own rows
-  // but COUNT TOWARD the Investment Grade target (advisor decision
-  // 2026-07-29, clarified same day): their holdings roll into the IG row's
-  // target/reallocation/difference math via TARGET_ROLLUP below, and their
-  // own rows show an em-dash in the target columns.
+  // NOTE: Municipal Bonds displays as its own row but COUNTS TOWARD the
+  // Investment Grade target via TARGET_ROLLUP below (its row shows an
+  // em-dash in the target columns). Short Duration Bonds has a DEDICATED
+  // target as of the March 2026 Hemington model (it replaced High Yield's
+  // slot); High Yield is now a standalone 0%-target sleeve.
   "Fixed Income": ["Cash", "Investment Grade", "Municipal Bonds", "Short Duration Bonds", "TIPS", "Foreign Bonds", "High Yield", "Multisector Bonds", "Other Fixed Income"],
   Alternatives: ["Commodities", "Hedge Funds", "Midstream Energy", "Other Alternatives"],
 };
@@ -60,7 +60,8 @@ export const SUMMARY_SECTIONS = {
 // combined (parent + children) actuals. Child rows show '—' in those columns.
 export const TARGET_ROLLUP = {
   'Municipal Bonds': 'Investment Grade',
-  'Short Duration Bonds': 'Investment Grade',
+  // Short Duration Bonds REMOVED 2026-07-29: the March 2026 model gives it a
+  // dedicated target (see targetProfiles.js), so it no longer rolls into IG.
 };
 
 export const CAP_STYLES = [
