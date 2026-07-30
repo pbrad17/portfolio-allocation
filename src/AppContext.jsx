@@ -462,6 +462,31 @@ export function AppProvider({ children }) {
     );
   }, []);
 
+  // Insert imported accounts (from Excel/CSV). mode 'replace' clears the
+  // Securities tab first; mode 'add' appends, silently dropping untouched
+  // empty placeholder accounts ("Account N" with no tickers) so a fresh
+  // session doesn't keep an empty shell next to real imports.
+  const importAccounts = useCallback((imported, mode) => {
+    setAccounts(prev => {
+      const keep = mode === 'add'
+        ? prev.filter(a => a.holdings.some(h => h.ticker) || !/^Account \d+$/.test(a.name))
+        : [];
+      let nextId = Math.max(0, ...keep.map(a => a.id));
+      const added = imported.map(a => ({
+        id: ++nextId,
+        name: a.name,
+        managed: a.managed !== false,
+        sweepToCash: false,
+        holdings: (a.holdings.length > 0 ? a.holdings : [{}]).map(h => ({
+          ...createEmptyHolding(),
+          ...h,
+          id: holdingIdCounter++,
+        })),
+      }));
+      return [...keep, ...added];
+    });
+  }, []);
+
   const loadSession = useCallback((data) => {
     if (data.assumptions) setAssumptions(prev => ({ ...prev, ...data.assumptions }));
     if (data.customSecurities) setCustomSecurities(data.customSecurities);
@@ -647,7 +672,7 @@ export function AppProvider({ children }) {
     addAccount, removeAccount, renameAccount, moveAccount, reorderAccount,
     updateHolding, addHolding, removeHolding, moveHolding, reorderHolding, toggleSweep,
     toggleManaged, sortHoldings,
-    loadSession,
+    loadSession, importAccounts,
     priceDate, priceLoading, refreshPrices,
     quoteStatus, fetchLiveQuote,
   };

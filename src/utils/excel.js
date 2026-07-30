@@ -13,7 +13,7 @@
 // the account name.
 
 import ExcelJS from 'exceljs';
-import { TICKER_DB } from '../data/tickerDb';
+import { tableToAccounts } from './importTable';
 import { getMarketValue, getPostValue, getUnrealizedGain } from './calculations';
 
 // ---------------------------------------------------------------------------
@@ -145,93 +145,14 @@ export async function exportToExcel({ assumptions, accounts }) {
 }
 
 // ---------------------------------------------------------------------------
-// Import
+// Import — thin wrapper around the shared importTable core (same brains as
+// the CSV importer: header located under preambles, synonym column mapping,
+// Schwab/Fidelity quirks, TICKER_DB backfill, totals-row skipping).
 // ---------------------------------------------------------------------------
 
-// Header synonyms, matched case-insensitively after trimming
-const HEADER_SYNONYMS = {
-  ticker:         ['ticker', 'symbol', 'ticker symbol'],
-  securityName:   ['security name', 'name', 'description', 'security', 'security description', 'fund name'],
-  style:          ['investment style', 'style'],
-  quantity:       ['quantity', 'shares', 'qty', 'units', 'share quantity', 'quantity of shares'],
-  price:          ['price', 'last price', 'market price', 'share price', 'current price', 'price per share'],
-  costBasis:      ['cost basis', 'basis', 'total cost', 'cost', 'cost basis total', 'total cost basis', 'adjusted cost basis'],
-  acquiredDate:   ['acquired date', 'acquisition date', 'purchase date', 'date acquired', 'acquired', 'open date', 'purchased'],
-  proposedChange: ['proposed change', 'change', 'proposed'],
-  account:        ['account', 'account name', 'account number'],
-};
-
-const SKIP_TICKER_VALUES = new Set(['total', 'totals', 'grand total', 'account total', 'cash & cash investments']);
-
-function cellText(cell) {
-  const v = cell?.value;
-  if (v == null) return '';
-  if (typeof v === 'object') {
-    if (v.richText) return v.richText.map(r => r.text).join('');
-    if (v.text) return String(v.text);
-    if (v.result != null) return String(v.result);
-    if (v instanceof Date) return v.toISOString();
-    return '';
-  }
-  return String(v);
-}
-
-function parseNumber(cell) {
-  const v = cell?.value;
-  if (v == null || v === '') return 0;
-  if (typeof v === 'number') return v;
-  if (typeof v === 'object' && typeof v.result === 'number') return v.result;
-  const cleaned = cellText(cell).replace(/[$,()%\s]/g, m => (m === '(' ? '-' : ''));
-  const n = parseFloat(cleaned);
-  return isNaN(n) ? 0 : n;
-}
-
-function parseDate(cell) {
-  const v = cell?.value;
-  if (v == null || v === '') return '';
-  let d = null;
-  if (v instanceof Date) d = v;
-  else if (typeof v === 'object' && v.result instanceof Date) d = v.result;
-  else {
-    const text = cellText(cell).trim();
-    if (!text) return '';
-    const parsed = new Date(text);
-    if (!isNaN(parsed.getTime())) d = parsed;
-  }
-  if (!d) return '';
-  // Use UTC parts — exceljs date cells come in as UTC midnight
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// Locate the header row + column map in the first 10 rows of a sheet.
-// Returns { headerRowNumber, colMap } or null if no ticker column was found.
-function findHeader(ws) {
-  const maxScan = Math.min(10, ws.rowCount);
-  for (let r = 1; r <= maxScan; r++) {
-    const row = ws.getRow(r);
-    const colMap = {};
-    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const text = cellText(cell).trim().toLowerCase();
-      if (!text) return;
-      for (const [field, synonyms] of Object.entries(HEADER_SYNONYMS)) {
-        if (colMap[field] == null && synonyms.includes(text)) {
-          colMap[field] = colNumber;
-        }
-      }
-    });
-    if (colMap.ticker != null) {
-      return { headerRowNumber: r, colMap };
-    }
-  }
-  return null;
-}
-
 // Parse an .xlsx ArrayBuffer into { accounts, skippedSheets, rowCount }.
-// Throws on unreadable files. Accounts hold plain holding objects compatible
-// with loadSession().
+// Throws on unreadable files. Accounts hold plain holding objects (no ids —
+// AppContext.importAccounts assigns them).
 export async function importFromExcel(arrayBuffer) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(arrayBuffer);
@@ -241,58 +162,19 @@ export async function importFromExcel(arrayBuffer) {
   let rowCount = 0;
 
   for (const ws of wb.worksheets) {
-    const header = findHeader(ws);
-    if (!header) {
+    // Convert the worksheet to plain rows (row.values is 1-based/sparse)
+    const rows = [];
+    for (let r = 1; r <= ws.rowCount; r++) {
+      const values = ws.getRow(r).values;
+      rows.push(Array.isArray(values) ? values.slice(1) : []);
+    }
+    const result = tableToAccounts(rows, ws.name);
+    if (!result || result.accounts.length === 0) {
       skippedSheets.push(ws.name);
       continue;
     }
-    const { headerRowNumber, colMap } = header;
-
-    // Group rows: by Account column when present, else by sheet name
-    const groups = new Map(); // accountName -> holdings[]
-    const defaultName = ws.name;
-
-    for (let r = headerRowNumber + 1; r <= ws.rowCount; r++) {
-      const row = ws.getRow(r);
-      const get = (field) => (colMap[field] != null ? row.getCell(colMap[field]) : null);
-
-      const rawTicker = cellText(get('ticker')).trim().toUpperCase();
-      const name = cellText(get('securityName')).trim();
-      if (!rawTicker && !name) continue;
-      if (SKIP_TICKER_VALUES.has(rawTicker.toLowerCase())) continue;
-
-      let style = cellText(get('style')).trim();
-      let securityName = name;
-      // Backfill name/style from the static DB when the sheet doesn't carry them
-      const dbEntry = TICKER_DB[rawTicker];
-      if (dbEntry) {
-        if (!securityName) securityName = dbEntry.name;
-        if (!style) style = dbEntry.style;
-      }
-
-      const costBasis = parseNumber(get('costBasis'));
-      const holding = {
-        ticker: rawTicker,
-        securityName,
-        style,
-        quantity: parseNumber(get('quantity')),
-        price: parseNumber(get('price')),
-        costBasis: costBasis > 0 ? costBasis : 0,
-        acquiredDate: parseDate(get('acquiredDate')),
-        proposedChange: parseNumber(get('proposedChange')),
-      };
-
-      const acctName = (colMap.account != null && cellText(get('account')).trim()) || defaultName;
-      if (!groups.has(acctName)) groups.set(acctName, []);
-      groups.get(acctName).push(holding);
-      rowCount++;
-    }
-
-    for (const [acctName, holdings] of groups) {
-      if (holdings.length > 0) {
-        accounts.push({ id: accounts.length + 1, name: acctName, managed: true, holdings });
-      }
-    }
+    accounts.push(...result.accounts);
+    rowCount += result.rowCount;
   }
 
   return { accounts, skippedSheets, rowCount };
