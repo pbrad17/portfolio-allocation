@@ -94,14 +94,39 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   is a standalone 0%-target sleeve; TIPS is 0 for 95/5→70/30 per the model).
 - Cost basis 0/blank = UNKNOWN → render em-dash, never a fake $0 gain.
   'average cost basis' (per-share) must NEVER map to costBasis (total).
+- Per-account `taxStatus` ('taxable' | 'deferred' | 'free', `data/accountTax.js`,
+  inferred from the account name as a DEFAULT the advisor can override).
+  Anything presenting a realized gain as a TAX consequence must read
+  `getGainSummary(...).taxable` — a sell inside an IRA/401(k)/Roth realizes
+  nothing taxable. Unrealized gain is still shown everywhere: there it is
+  performance, not tax. Holding-period math takes the session's as-of date,
+  never `new Date()`.
+- Missing data is reported as MISSING, never as zero — expense ratios,
+  dividend yields, and cost basis all follow this.
 - EM domicile: Morningstar framework + advisor override (HK/Macau = EM).
 - Session JSON is v1.4; keep `loadSession` backward-compatible.
 
+## Client-data constraint (BINDING)
+
+Client data must NEVER be persisted on the public site — that is what Export
+Session is for (the .json lives on the firm's servers). Accounts, holdings,
+client name and balances stay in React state only. localStorage holds nothing
+client-identifying: tickers/names/styles/prices plus UI preferences. Keep it
+that way. The advisor also rejected File System Access API autosave (DLP /
+browser-policy risk on a mapped firm drive), so the agreed persistence design
+is: beforeunload guard + Ctrl+S quick-export + unsaved-count indicator +
+opt-in sessionStorage crash recovery. Not built yet.
+
 ## Working practices
 
-- Verify like the cloud sessions did: build + targeted unit tests
-  (vite-node for src imports) + a browser pass when UI changed; test against
-  the Norman session for realistic scale. All-green before commit.
+- `npm test` (vitest, unit) and `npm run e2e` (Playwright, `channel: 'msedge'`,
+  auto-starts the dev server, /api mocked). `npm run verify` runs
+  build + unit + e2e. ADD TESTS WITH EVERY CHANGE — this suite is the
+  regression net.
+- Verify like the cloud sessions did: build + tests + a browser pass when UI
+  changed; test against the Norman session for realistic scale. All-green
+  before commit. Measure the lint baseline (`git stash`) rather than assuming
+  it — the rule is no NEW problems, not zero problems.
 - Pre-existing lint errors (PieChartWidget, PdfPanel unused useEffect,
   categoryMap escape) are known; don't chase them inside feature commits.
 - Deploy = commit → push master → Vercel auto-deploy → verify prod bundle
