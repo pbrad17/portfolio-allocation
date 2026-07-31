@@ -7,7 +7,7 @@ import {
   getUnrealizedGain, getRealizedGain, getGainSummary, hasKnownBasis, isLongTerm,
 } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
-import { getTaxStatus, isSheltered, TAX_STATUSES, TAX_STATUS_OPTIONS } from '../data/accountTax';
+import { getTaxStatus, isSheltered, taxStatusLabel, TAX_STATUSES, TAX_STATUS_OPTIONS } from '../data/accountTax';
 
 function formatWithCommas(value, decimals = 2) {
   if (value === 0 || value === '' || value == null) return '';
@@ -553,7 +553,7 @@ function AccountTab({ account }) {
   return (
     <div>
       {/* Account header */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3 flex-wrap bg-dark-bg border border-border rounded-lg px-3 py-2 shadow-[var(--panel-shadow)]">
         {editing ? (
           <input
             autoFocus
@@ -571,9 +571,10 @@ function AccountTab({ account }) {
             {account.name}
           </h3>
         )}
-        <span className="text-steel-blue text-sm">
-          Total: {formatCurrency(accountTotal)}
+        <span className="text-sm text-steel-blue">
+          Total <span className="text-text-primary font-semibold tabular-nums">{formatCurrency(accountTotal)}</span>
         </span>
+        <span className="w-px h-4 bg-border" aria-hidden="true" />
         <label
           className="flex items-center gap-1.5 text-sm text-text-primary/60 cursor-pointer"
           title="When on, the account's $$$$ cash row automatically offsets all other proposed changes — sells add to cash, buys draw it down. Editing the cash row's change manually turns the sweep off."
@@ -616,7 +617,8 @@ function AccountTab({ account }) {
         {accounts.length > 1 && (
           <button
             onClick={() => removeAccount(account.id)}
-            className="ml-auto text-negative/60 hover:text-negative text-sm"
+            className="ml-auto px-2 py-1 rounded border border-transparent text-negative/70 hover:text-negative hover:border-negative/40 hover:bg-negative/10 text-sm transition-colors"
+            title="Remove this account and all of its holdings"
           >
             Remove Account
           </button>
@@ -763,6 +765,7 @@ function AccountTab({ account }) {
 
 export default function SecuritiesPanel() {
   const { accounts, addAccount, moveAccount, reorderAccount } = useAppContext();
+  const householdTotal = accounts.reduce((s, a) => s + getAccountTotal(a.holdings), 0);
   const [activeAccountId, setActiveAccountId] = useState(accounts[0]?.id);
   // Account-tab drag-and-drop state (indexes into accounts)
   const [tabDragIdx, setTabDragIdx] = useState(null);
@@ -771,7 +774,20 @@ export default function SecuritiesPanel() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex items-baseline justify-between gap-4 mb-2">
+        <p className="text-xs text-steel-blue/70">
+          {accounts.length} account{accounts.length === 1 ? '' : 's'}
+          <span className="mx-1.5 opacity-40">·</span>
+          Drag a tab to reorder
+          <span className="mx-1.5 opacity-40">·</span>
+          Ticker <span className="font-semibold text-steel-blue">$$$$</span> for cash
+        </p>
+        <p className="text-xs text-steel-blue/70">
+          Household <span className="text-text-primary font-semibold tabular-nums">{formatCurrency(householdTotal)}</span>
+        </p>
+      </div>
+
+      <div className="flex items-stretch gap-1.5 mb-4 flex-wrap">
         {accounts.map((a, idx) => (
           <div
             key={a.id}
@@ -808,18 +824,39 @@ export default function SecuritiesPanel() {
                 &#9664;
               </button>
             )}
+            {/* Name over value: the balance is the fastest way to find the
+                right account in a 14-account household, and putting it in the
+                tab saves a click to check. */}
             <button
               onClick={() => setActiveAccountId(a.id)}
-              className={`px-4 py-2 text-sm rounded-t border-b-2 transition-colors ${
+              aria-current={a.id === activeAccount?.id ? 'true' : undefined}
+              // Custodian names often differ only in a trailing "#1"/"#2",
+              // which is exactly what truncation eats — always expose the
+              // full name on hover.
+              title={a.name}
+              className={`px-3 py-1.5 text-left rounded-t border-b-2 transition-colors ${
                 a.id === activeAccount?.id
                   ? 'bg-header-bg text-accent border-accent'
-                  : 'bg-dark-bg text-text-primary/60 border-transparent hover:text-text-primary hover:bg-alt-bg'
+                  : 'bg-dark-bg text-text-primary/60 border-transparent hover:text-text-primary hover:bg-alt-bg hover:border-steel-blue/40'
               }`}
             >
-              {a.name}
-              {a.managed === false && (
-                <span className="ml-1 text-xs text-steel-blue/60" title="Unmanaged account">(U)</span>
-              )}
+              <span className="block text-sm leading-tight truncate max-w-[248px]">
+                {a.name}
+                {a.managed === false && (
+                  <span className="ml-1 text-xs text-steel-blue/60" title="Unmanaged account">(U)</span>
+                )}
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] leading-tight mt-0.5 opacity-70">
+                <span className="tabular-nums">{formatCurrency(getAccountTotal(a.holdings))}</span>
+                {isSheltered(a) && (
+                  <span
+                    className="px-1 rounded bg-steel-blue/20 text-steel-blue"
+                    title={`${taxStatusLabel(a)} — sells realize no taxable gain`}
+                  >
+                    {TAX_STATUSES[getTaxStatus(a)].short}
+                  </span>
+                )}
+              </span>
             </button>
             {a.id === activeAccount?.id && idx < accounts.length - 1 && (
               <button
@@ -841,8 +878,6 @@ export default function SecuritiesPanel() {
           </button>
         )}
       </div>
-
-      <p className="text-xs text-steel-blue/60 mb-4">Tip: Use ticker <span className="font-semibold text-steel-blue/80">$$$$</span> for cash positions.</p>
 
       {activeAccount && <AccountTab key={activeAccount.id} account={activeAccount} />}
     </div>

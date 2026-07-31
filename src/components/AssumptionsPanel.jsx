@@ -2,12 +2,59 @@ import { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { PROFILE_OPTIONS } from '../data/targetProfiles';
 import { SUMMARY_SECTIONS } from '../data/styleMapping';
+import { getAccountTotal, getMarketValue } from '../utils/calculations';
+import { isSheltered } from '../data/accountTax';
+import { formatCurrency } from '../utils/formatting';
 
 const ALLOC_GROUPS = [
   { label: 'Equities', categories: SUMMARY_SECTIONS.Equities },
   { label: 'Fixed Income', categories: SUMMARY_SECTIONS['Fixed Income'] },
   { label: 'Alternatives', categories: SUMMARY_SECTIONS.Alternatives },
 ];
+
+// The landing tab used to be three fields in an otherwise empty page. This is
+// a read-only snapshot of what is actually loaded — enough for the advisor to
+// confirm at a glance that the right household is open before touching
+// anything, derived entirely from existing state.
+function HouseholdSnapshot() {
+  const { accounts } = useAppContext();
+
+  const positions = accounts.reduce(
+    (n, a) => n + a.holdings.filter(h => h.ticker && getMarketValue(h) > 0).length, 0
+  );
+  const total = accounts.reduce((s, a) => s + getAccountTotal(a.holdings), 0);
+  const sheltered = accounts.filter(isSheltered).length;
+  const unmanaged = accounts.filter(a => a.managed === false).length;
+
+  if (positions === 0) {
+    return (
+      <div className="bg-dark-bg border border-dashed border-border rounded-lg px-4 py-3 text-xs text-text-primary/50 max-w-sm">
+        No holdings loaded yet. Import a session or drop a custodian file anywhere on the page.
+      </div>
+    );
+  }
+
+  const stat = (label, value, hint) => (
+    <div key={label}>
+      <div className="text-[10px] uppercase tracking-wide text-steel-blue/80">{label}</div>
+      <div className="text-sm font-semibold text-text-primary tabular-nums">{value}</div>
+      {hint && <div className="text-[10px] text-text-primary/40">{hint}</div>}
+    </div>
+  );
+
+  return (
+    <div className="bg-dark-bg border border-border rounded-lg px-4 py-3 shadow-[var(--panel-shadow)]">
+      <div className="flex gap-6">
+        {stat('Household', formatCurrency(total))}
+        {stat('Accounts', accounts.length, [
+          sheltered ? `${sheltered} sheltered` : null,
+          unmanaged ? `${unmanaged} unmanaged` : null,
+        ].filter(Boolean).join(' · ') || 'all taxable, all managed')}
+        {stat('Positions', positions)}
+      </div>
+    </div>
+  );
+}
 
 export default function AssumptionsPanel() {
   const { assumptions, setAssumptions, customSecurities, addCustomSecurity, updateCustomSecurity, removeCustomSecurity } = useAppContext();
@@ -42,9 +89,17 @@ export default function AssumptionsPanel() {
 
   return (
     <div className="max-w-5xl">
-      <h2 className="text-xl font-bold mb-6 text-accent">Client Assumptions</h2>
+      <div className="flex flex-wrap items-start gap-6 mb-6">
+        <div className="flex-1 min-w-[320px]">
+          <h2 className="text-xl font-bold mb-1 text-accent">Client Assumptions</h2>
+          <p className="text-xs text-text-primary/50">
+            These drive the header, the target model, and every filename the tool exports.
+          </p>
+        </div>
+        <HouseholdSnapshot />
+      </div>
 
-      <div className="space-y-5 max-w-xl">
+      <div className="space-y-5 max-w-xl bg-dark-bg border border-border rounded-lg p-5 shadow-[var(--panel-shadow)]">
         <div>
           <label className="block text-sm text-steel-blue mb-1">Client Name</label>
           <input

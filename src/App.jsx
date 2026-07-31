@@ -84,24 +84,36 @@ function AppContent() {
       </div>
 
       {/* Navigation */}
-      <div className="bg-dark-bg border-b border-border flex">
+      <nav className="bg-dark-bg border-b border-border flex overflow-x-auto">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
+            aria-current={activeTab === tab.id ? 'page' : undefined}
+            className={`relative px-6 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === tab.id
-                ? 'bg-header-bg text-accent border-b-2 border-accent'
+                ? 'bg-header-bg text-accent'
                 : 'text-text-primary/70 hover:text-text-primary hover:bg-alt-bg'
             }`}
           >
             {tab.label}
+            {/* Underline as an absolute element so switching tabs doesn't
+                shift the label by the 2px border it used to add */}
+            <span
+              className={`absolute left-0 right-0 bottom-0 h-0.5 bg-accent transition-opacity ${
+                activeTab === tab.id ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* Price notice */}
       <div className="bg-alt-bg/50 border-b border-border-light px-6 py-2 text-xs text-steel-blue flex items-center gap-3">
+        <span
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${priceLoading ? 'bg-accent animate-pulse' : 'bg-positive'}`}
+          aria-hidden="true"
+        />
         <span>
           {priceLoading ? 'Updating prices...' : `Prices as of ${priceDate}`}
           {' '} (per Yahoo Finance) — update prices as needed before generating report.
@@ -109,14 +121,17 @@ function AppContent() {
         <button
           onClick={refreshPrices}
           disabled={priceLoading}
-          className="px-2 py-0.5 rounded border border-steel-blue/40 hover:bg-steel-blue/10 transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-steel-blue/40 hover:bg-steel-blue/10 hover:border-steel-blue transition-colors disabled:opacity-50"
         >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={priceLoading ? 'bp-spin' : ''} aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" />
+          </svg>
           {priceLoading ? 'Refreshing...' : 'Refresh Prices'}
         </button>
       </div>
 
-      {/* Content */}
-      <div className="p-6">
+      {/* Content — keyed so each tab fades in rather than snapping */}
+      <div key={activeTab} className="p-6 bp-panel-enter">
         {activeTab === 'assumptions' && <AssumptionsPanel />}
         {activeTab === 'securities' && <SecuritiesPanel />}
         {activeTab === 'summary' && <SummaryPanel />}

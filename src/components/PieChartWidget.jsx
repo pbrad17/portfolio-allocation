@@ -69,7 +69,10 @@ function Pie3DChart({ data, theme }) {
 
       {/* Labels with collision resolution */}
       {(() => {
-        const MIN_GAP = 22;
+        // Each label is two lines (name + percent) spanning ~13px, so a 22px
+        // gap left them almost touching once several small sleeves collided
+        // on the same side.
+        const MIN_GAP = 27;
         const labelRadius = RX + 50;
         const labelRY = RY + 55;
 
@@ -108,6 +111,15 @@ function Pie3DChart({ data, theme }) {
             if (group[i].y > maxY) group[i].y = maxY;
             if (i < group.length - 1 && group[i + 1].y - group[i].y < MIN_GAP) {
               group[i].y = group[i + 1].y - MIN_GAP;
+            }
+          }
+          // The backward pass can push the topmost labels off the canvas —
+          // clamp and re-space downward so nothing clips at the top edge.
+          const minY = 14;
+          for (let i = 0; i < group.length; i++) {
+            if (group[i].y < minY) group[i].y = minY;
+            if (i > 0 && group[i].y - group[i - 1].y < MIN_GAP) {
+              group[i].y = group[i - 1].y + MIN_GAP;
             }
           }
           return group;

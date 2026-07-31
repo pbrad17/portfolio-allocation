@@ -67,3 +67,100 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* ---------------------------------------------------------------------------
+   Polish layer. Everything below is presentational only — no layout box sizes
+   change, so the PDF (which is laid out separately by @react-pdf) and the
+   existing table geometry are untouched.
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Elevation, tuned per theme: on the dark palette a shadow reads as depth
+     only if it is nearly black; on light it needs the blue of the page. */
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 4px 14px -6px rgba(0, 0, 0, 0.45);
+  --panel-ring: rgba(255, 255, 255, 0.04);
+}
+[data-theme="light"] {
+  --panel-shadow: 0 1px 2px rgba(26, 46, 61, 0.06), 0 4px 14px -6px rgba(26, 46, 61, 0.16);
+  --panel-ring: rgba(26, 46, 61, 0.03);
+}
+
+/* Money and percentages must line up digit-for-digit down a column. Applied to
+   every table cell rather than per-component so no numeric column is missed. */
+table th,
+table td {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Keyboard focus was previously indistinguishable from hover on some controls.
+   :focus-visible only fires for keyboard users, so mouse interaction is
+   visually unchanged. */
+:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* Inputs sit in dense tables, so the affordance has to be quiet until touched */
+input,
+select,
+textarea,
+button {
+  transition: border-color 120ms ease, background-color 120ms ease,
+              color 120ms ease, box-shadow 120ms ease;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--theme-accent) 30%, transparent);
+}
+
+/* Scrollbars: the account strip and wide holdings tables scroll horizontally,
+   and the default chrome is heavy enough to read as a UI element of its own. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--theme-steel-blue) 55%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--theme-steel-blue) 45%, transparent);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--theme-steel-blue) 70%, transparent);
+}
+
+@keyframes bp-fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+/* Tab panels swap instantly; a short fade stops the whole page from flashing */
+.bp-panel-enter {
+  animation: bp-fade-in 160ms ease-out both;
+}
+
+@keyframes bp-spin {
+  to { transform: rotate(360deg); }
+}
+.bp-spin {
+  animation: bp-spin 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-panel-enter,
+  .bp-spin {
+    animation: none;
+  }
+  input, select, textarea, button { transition: none; }
+}
