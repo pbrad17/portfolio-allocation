@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { TICKER_DB } from './data/tickerDb';
 import { nameSimilarity, SIMILARITY_THRESHOLD } from './utils/nameSimilarity';
+import { findSessionHolding } from './utils/sessionLookup';
 
 const AppContext = createContext();
 
@@ -149,10 +150,19 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Resolve a ticker: custom securities → resolved overrides (audit-accepted
-  // corrections win over the static DB) → static DB → previously resolved →
-  // live /api/lookup (Yahoo + Morningstar category classification).
-  // Returns { source, ...info } or null if the ticker can't be found.
+  // Look up a ticker already entered elsewhere in the session so a new row
+  // inherits the advisor's manual name/style corrections instead of the
+  // static database snapshot. Sits between custom securities and overrides in
+  // the ticker-blur resolve chain; security fields only (see sessionLookup).
+  const lookupSessionHolding = useCallback((ticker, excludeHoldingId) => (
+    findSessionHolding(accountsRef.current, ticker, excludeHoldingId)
+  ), []);
+
+  // Resolve a ticker: custom securities → another row already holding this
+  // ticker (handled by lookupSessionHolding at the call site) → resolved
+  // overrides (audit-accepted corrections win over the static DB) → static DB
+  // → previously resolved → live /api/lookup (Yahoo + Morningstar category
+  // classification). Returns { source, ...info } or null if not found.
   const resolveTicker = useCallback(async (ticker) => {
     const t = ticker?.toUpperCase().trim();
     if (!t) return null;
@@ -663,6 +673,7 @@ export function AppProvider({ children }) {
     customSecurities, setCustomSecurities,
     addCustomSecurity, updateCustomSecurity, removeCustomSecurity,
     resolvedSecurities, resolveTicker, verifyResolved, updateResolved,
+    lookupSessionHolding,
     setDbOverride, removeResolved,
     nameAlerts, dismissNameAlert,
     isDismissed, addDismissal,

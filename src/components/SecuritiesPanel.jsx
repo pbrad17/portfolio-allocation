@@ -110,7 +110,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
   const {
     updateHolding, removeHolding, moveHolding,
     customSecurities, addCustomSecurity, updateCustomSecurity,
-    resolvedSecurities, resolveTicker, verifyResolved,
+    resolvedSecurities, resolveTicker, verifyResolved, lookupSessionHolding,
     nameAlerts, dismissNameAlert, setDbOverride,
     quoteStatus, fetchLiveQuote,
   } = useAppContext();
@@ -211,6 +211,22 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
       fetchLiveQuote(ticker); // custom securities still get a live price
       return;
     }
+    // Another row in the session already holds this ticker — reuse it. That
+    // row reflects any manual corrections the advisor made (renamed ADRs,
+    // reclassified funds, CUSIP bonds typed in by hand), which the static
+    // database doesn't know about. Security fields only: quantity, cost
+    // basis, acquisition date and proposed change stay position-specific.
+    const sessionMatch = lookupSessionHolding(ticker, holding.id);
+    if (sessionMatch) {
+      if (sessionMatch.securityName) updateHolding(accountId, holding.id, 'securityName', sessionMatch.securityName);
+      if (sessionMatch.style) updateHolding(accountId, holding.id, 'style', sessionMatch.style);
+      if (sessionMatch.price != null) updateHolding(accountId, holding.id, 'price', sessionMatch.price);
+      // The copied price is as stale as the row it came from — confirm it
+      // live so the freshness dot means the same thing on every row.
+      fetchLiveQuote(ticker);
+      return;
+    }
+
     const known = resolvedSecurities[ticker];
     if (known?.override) {
       // Audit-accepted override wins over the static DB
