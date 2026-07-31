@@ -34,10 +34,14 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
 
 - `src/AppContext.jsx` — all state. Accounts/holdings, resolve chain,
   live-quote layer (`fetchLiveQuote` on every ticker entry + `quoteStatus`
-  freshness map), reorder, `importAccounts(accounts, 'add'|'replace')`,
-  session load. Holdings: ticker, securityName, style, quantity, price,
-  costBasis (TOTAL $; 0 = unknown), acquiredDate, proposedChange.
-- `src/data/styleMapping.js` — styles/categories/sections; `TARGET_ROLLUP`
+  freshness map), `lookupSessionHolding` (cross-account autofill, backed by
+  `src/utils/sessionLookup.js`), reorder,
+  `importAccounts(accounts, 'add'|'replace')`, session load. Holdings: ticker,
+  securityName, style, quantity, price, costBasis (TOTAL $; 0 = unknown),
+  acquiredDate, proposedChange.
+- `src/data/styleMapping.js` — styles/categories/sections; `regionBucket`
+  (region-only equity bucketing — the Database audit deliberately ignores
+  size and value/growth deltas); `TARGET_ROLLUP`
   (single source of truth: Municipal Bonds rolls into the Investment Grade
   target; rollup children render as indented "incl." sub-rows with own $/%
   and null target fields — totals and pie use own/main-row logic to avoid
@@ -57,19 +61,33 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   backfill). `csv.js` (no exceljs in its graph — keep it that way; its
   chunk is 1.7kB vs excel's 940kB) and `excel.js` build on it. Both are
   dynamic imports from `SessionControls.jsx` (Export ▾ / Import ▾ dropdowns,
-  Add-vs-Replace modal).
+  Add-vs-Replace modal). `SessionControls` also owns the app-wide file-drop
+  overlay: window drag listeners gated on `dataTransfer.types` containing
+  'Files' (so row/tab reorder DnD is untouched), an enter/leave depth counter,
+  a `pointer-events-none` overlay, and one merged Add-vs-Replace decision for a
+  multi-file drop.
 - `src/components/PdfPanel.jsx` — @react-pdf/renderer. Hard-won layout
   rules: rows are `wrap={false}`; left cells get `cellGutter` padding;
   securities font auto-sizes by column count (`holdingsFontSize`); the
   summary pie is measured-and-scaled to stay on page 1; gain columns are
-  toggles, default OFF.
+  toggles, default OFF. Account page headers add `Basis: / Unrealized:` only
+  when a gain toggle is on AND that account has basis — it must stay ONE line
+  or pagination shifts. All tab options persist via `src/utils/pdfOptions.js`
+  (`bp-pdf-report-options`), always merged over `PDF_OPTION_DEFAULTS`.
 
 ## Domain conventions (binding)
 
 - Classification confidence: 'high' / 'review' (amber unverified dot) /
   'manual' (composite funds → Custom Security on Assumptions tab).
-- Ticker resolve precedence: customSecurities → override (audit-accepted) →
-  TICKER_DB → resolved → live /api/lookup.
+- Ticker resolve precedence: customSecurities → **existing session holding**
+  (any account — carries the advisor's manual corrections) → override
+  (audit-accepted) → TICKER_DB → resolved → live /api/lookup. The session hop
+  copies securityName/style/price ONLY; quantity, costBasis, acquiredDate and
+  proposedChange are position-specific and never travel.
+- Equity value/growth classification needs CORROBORATION: P/B and forward P/E
+  each vote (dividend yield votes Value only), and the answer leaves Blend only
+  when the available signals agree. One rich multiple alone is a Blend — this
+  is what keeps mega caps like Alphabet out of the Growth box.
 - Ultrashort/T-bill ETFs (JPST, BIL, SGOV…) classify as **Cash** by advisor
   convention; DFSD-style short-term bond funds are **Short Duration Bonds**
   (which has a dedicated target — it replaced High Yield's slot; High Yield
@@ -94,6 +112,11 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
 
 - OPEN (ask advisor): should T-bill ETFs count toward the Short Duration
   Bonds target instead of Cash?
+- OPEN (ask advisor): the recalibrated equity heuristic reads KO as Growth
+  (forward P/E 25.09, 0.09 over the threshold). Thresholds were left alone
+  rather than tuned around one name — confirm that's the right call.
+- The real Norman export has NO cost basis on any position, so gain/basis
+  features must be verified against an augmented copy of it.
 - VTWNX in the Norman session is styled Investment Grade — should be a
   Custom Security (advisor to fix in-session).
 - Parked: individual-bond auto-populate by CUSIP (no free feed; would need
