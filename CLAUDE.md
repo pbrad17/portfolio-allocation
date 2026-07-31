@@ -86,6 +86,16 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   or pagination shifts. All tab options persist via `src/utils/pdfOptions.js`
   (`bp-pdf-report-options`), always merged over `PDF_OPTION_DEFAULTS`.
 
+## UI conventions
+
+`src/index.css` holds a polish layer below the theme tokens: tabular figures
+on every `table th/td` (never per-component — a missed numeric column is
+visible), `:focus-visible` accent rings, per-theme `--panel-shadow`, quiet
+scrollbars, and short transitions. **All motion sits behind
+`prefers-reduced-motion`.** Panels are `bg-dark-bg border border-border
+rounded-lg` with `shadow-[var(--panel-shadow)]`. Nothing in the polish layer
+changes box sizes, which is what keeps the PDF out of scope.
+
 ## Domain conventions (binding)
 
 - Classification confidence: 'high' / 'review' (amber unverified dot) /
