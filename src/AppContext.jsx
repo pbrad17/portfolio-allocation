@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { TICKER_DB } from './data/tickerDb';
 import { nameSimilarity, SIMILARITY_THRESHOLD } from './utils/nameSimilarity';
 import { findSessionHolding } from './utils/sessionLookup';
+import { inferTaxStatus, getTaxStatus, withInferredTaxStatus, TAX_STATUSES } from './data/accountTax';
 
 const AppContext = createContext();
 
@@ -43,10 +44,14 @@ function isFetchableSymbol(s) {
 }
 
 function createEmptyAccount(id, name) {
+  const accountName = name || `Account ${id}`;
   return {
     id,
-    name: name || `Account ${id}`,
+    name: accountName,
     managed: true,
+    // Tax treatment drives whether realized gains are reported as a tax
+    // consequence at all — guessed from the registration in the name.
+    taxStatus: inferTaxStatus(accountName),
     holdings: [createEmptyHolding()],
   };
 }
@@ -308,9 +313,28 @@ export function AppProvider({ children }) {
     setAccounts(prev => prev.filter(a => a.id !== accountId));
   }, []);
 
+  // Renaming re-guesses the tax treatment, but ONLY while the advisor hasn't
+  // overridden it: if the current status is still exactly what the old name
+  // would have inferred, the guess is allowed to follow the new name. An
+  // explicit choice is never clobbered.
   const renameAccount = useCallback((accountId, newName) => {
     setAccounts(prev =>
-      prev.map(a => a.id === accountId ? { ...a, name: newName } : a)
+      prev.map(a => {
+        if (a.id !== accountId) return a;
+        const stillInferred = getTaxStatus(a) === inferTaxStatus(a.name);
+        return {
+          ...a,
+          name: newName,
+          taxStatus: stillInferred ? inferTaxStatus(newName) : getTaxStatus(a),
+        };
+      })
+    );
+  }, []);
+
+  const setAccountTaxStatus = useCallback((accountId, status) => {
+    if (!TAX_STATUSES[status]) return;
+    setAccounts(prev =>
+      prev.map(a => a.id === accountId ? { ...a, taxStatus: status } : a)
     );
   }, []);
 
@@ -486,6 +510,8 @@ export function AppProvider({ children }) {
         id: ++nextId,
         name: a.name,
         managed: a.managed !== false,
+        // Custodian exports carry the registration in the account name
+        taxStatus: a.taxStatus || inferTaxStatus(a.name),
         sweepToCash: false,
         holdings: (a.holdings.length > 0 ? a.holdings : [{}]).map(h => ({
           ...createEmptyHolding(),
@@ -505,7 +531,7 @@ export function AppProvider({ children }) {
     }
     if (data.accounts) {
       holdingIdCounter = 1;
-      const loaded = data.accounts.map(acct => ({
+      const loaded = data.accounts.map(acct => withInferredTaxStatus({
         ...acct,
         // Backward compat: session files older than v1.3 lack the managed flag
         managed: acct.managed !== false ? true : false,
@@ -681,6 +707,7 @@ export function AppProvider({ children }) {
     showZeroRows, setShowZeroRows,
     theme, toggleTheme,
     addAccount, removeAccount, renameAccount, moveAccount, reorderAccount,
+    setAccountTaxStatus,
     updateHolding, addHolding, removeHolding, moveHolding, reorderHolding, toggleSweep,
     toggleManaged, sortHoldings,
     loadSession, importAccounts,

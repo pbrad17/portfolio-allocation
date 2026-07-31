@@ -213,8 +213,13 @@ export default function SummaryPanel() {
           )}
 
           {(() => {
-            const gains = getGainSummary(accounts);
+            const gains = getGainSummary(accounts, assumptions.asOfDate);
             if (gains.positionsWithBasis === 0 && gains.sellsWithoutBasis === 0) return null;
+            // Only taxable accounts produce a reportable gain. Sells inside an
+            // IRA / 401(k) / Roth are excluded from the tax line entirely and
+            // called out separately so the number is never overstated.
+            const tax = gains.taxable;
+            const shelteredSells = gains.sheltered.sellCount;
             return (
               <div className="mt-3 bg-dark-bg border border-border rounded px-3 py-2 text-sm space-y-1">
                 <div>
@@ -230,14 +235,14 @@ export default function SummaryPanel() {
                 </div>
                 {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
                   <div>
-                    <span className="text-steel-blue">Est. gains realized by proposed trades: </span>
-                    <span className={`font-semibold ${gains.realized >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {formatCurrency(gains.realized)}
+                    <span className="text-steel-blue">Est. taxable gains realized by proposed trades: </span>
+                    <span className={`font-semibold ${tax.realized >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      {formatCurrency(tax.realized)}
                     </span>
-                    {(gains.realizedLT !== 0 || gains.realizedST !== 0 || gains.realizedUnknownTerm !== 0) && (
+                    {(tax.realizedLT !== 0 || tax.realizedST !== 0 || tax.realizedUnknownTerm !== 0) && (
                       <span className="text-text-primary/60 text-xs">
-                        {' '}— {formatCurrency(gains.realizedLT)} LT / {formatCurrency(gains.realizedST)} ST
-                        {gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''}
+                        {' '}— {formatCurrency(tax.realizedLT)} LT / {formatCurrency(tax.realizedST)} ST
+                        {tax.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(tax.realizedUnknownTerm)} unknown term` : ''}
                       </span>
                     )}
                     {gains.sellsWithoutBasis > 0 && (
@@ -245,6 +250,13 @@ export default function SummaryPanel() {
                         {' '}({gains.sellsWithoutBasis} sell{gains.sellsWithoutBasis > 1 ? 's' : ''} missing basis — excluded)
                       </span>
                     )}
+                  </div>
+                )}
+                {shelteredSells > 0 && (
+                  <div className="text-xs text-text-primary/50">
+                    {shelteredSells} proposed sell{shelteredSells > 1 ? 's' : ''} sit
+                    {shelteredSells > 1 ? '' : 's'} in tax-deferred or tax-free accounts and realize
+                    {shelteredSells > 1 ? '' : 's'} no taxable gain — excluded from the figure above.
                   </div>
                 )}
               </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { formatDateFile } from '../utils/formatting';
+import { getTaxStatus } from '../data/accountTax';
 
 // Header controls: two dropdowns (Export / Import) instead of a growing row
 // of buttons. Holdings import accepts .xlsx AND .csv (routed by extension)
@@ -74,7 +75,7 @@ export default function SessionControls() {
   const handleSessionExport = () => {
     closeMenus();
     const data = {
-      version: '1.4',
+      version: '1.5',
       exportedAt: new Date().toISOString(),
       assumptions,
       customSecurities,
@@ -84,6 +85,9 @@ export default function SessionControls() {
         name: a.name,
         sweepToCash: !!a.sweepToCash,
         managed: a.managed !== false,
+        // v1.5: tax treatment. Older files have none and are re-inferred from
+        // the account name on load (see accountTax.withInferredTaxStatus).
+        taxStatus: getTaxStatus(a),
         holdings: a.holdings.map(h => ({
           ticker: h.ticker,
           securityName: h.securityName,

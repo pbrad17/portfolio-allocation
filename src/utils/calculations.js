@@ -1,4 +1,5 @@
 import { STYLE_TO_CATEGORY, SUMMARY_SECTIONS, TARGET_ROLLUP } from '../data/styleMapping';
+import { isSheltered } from '../data/accountTax';
 
 export function getMarketValue(holding) {
   return (holding.quantity || 0) * (holding.price || 0);
@@ -32,9 +33,25 @@ export function getUnrealizedGain(holding) {
   return getMarketValue(holding) - holding.costBasis;
 }
 
+// Coerce an as-of value to a local-midnight Date. Accepts a Date or the
+// 'YYYY-MM-DD' string the Assumptions tab stores; anything unusable falls back
+// to today so a blank as-of date never breaks the gain columns.
+export function toAsOfDate(asOf) {
+  if (asOf instanceof Date && !isNaN(asOf.getTime())) return asOf;
+  if (typeof asOf === 'string' && asOf) {
+    const parsed = new Date(asOf + 'T00:00:00');
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+}
+
 // true = long-term (held MORE than 1 year), false = short-term, null =
 // unknown date. IRS rule: a sale on or before the one-year anniversary of
 // the acquisition date is short-term; long-term starts the day after.
+//
+// asOf defaults to today but callers should pass the session's as-of date:
+// a report run for a past quarter must classify holding periods as of THAT
+// date, not as of whenever the PDF happens to be generated.
 export function isLongTerm(acquiredDate, asOf = new Date()) {
   if (!acquiredDate) return null;
   const d = new Date(acquiredDate + 'T00:00:00');
@@ -42,7 +59,8 @@ export function isLongTerm(acquiredDate, asOf = new Date()) {
   const oneYearLater = new Date(d);
   oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
   // Compare calendar days, not timestamps — the anniversary day itself is ST
-  const asOfDay = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  const asOfRef = toAsOfDate(asOf);
+  const asOfDay = new Date(asOfRef.getFullYear(), asOfRef.getMonth(), asOfRef.getDate());
   return asOfDay > oneYearLater;
 }
 
@@ -50,7 +68,7 @@ export function isLongTerm(acquiredDate, asOf = new Date()) {
 // average-cost method: the sold fraction of market value carries the same
 // fraction of total basis. Returns null unless this row is a sell
 // (proposedChange < 0) with a known basis and positive market value.
-export function getRealizedGain(holding) {
+export function getRealizedGain(holding, asOf) {
   const mv = getMarketValue(holding);
   const change = holding.proposedChange || 0;
   if (change >= 0 || mv <= 0 || !hasKnownBasis(holding)) return null;
@@ -58,13 +76,29 @@ export function getRealizedGain(holding) {
   return {
     amount: fraction * (mv - holding.costBasis),
     fraction,
-    term: isLongTerm(holding.acquiredDate), // true LT / false ST / null unknown
+    term: isLongTerm(holding.acquiredDate, asOf), // true LT / false ST / null unknown
   };
 }
 
 // Household-level gain rollup across accounts (managed + unmanaged alike —
 // capital gains are a tax question, not a management-scope question).
-export function getGainSummary(accounts) {
+//
+// TAX AWARENESS: the top-level realized/unrealized fields keep their original
+// meaning (every account, so nothing that already consumes them changes), and
+// the summary additionally carries `taxable` and `sheltered` splits. Anything
+// presenting a realized figure as a TAX consequence must read `.taxable` —
+// a sell inside an IRA or 401(k) realizes nothing the client will ever be
+// taxed on, and reporting it as a capital gain is simply wrong.
+export function getGainSummary(accounts, asOf) {
+  const bucket = () => ({
+    unrealized: 0,
+    realized: 0,
+    realizedLT: 0,
+    realizedST: 0,
+    realizedUnknownTerm: 0,
+    sellCount: 0,
+    positionsWithBasis: 0,
+  });
   const summary = {
     unrealized: 0,
     positionsWithBasis: 0,
@@ -75,8 +109,13 @@ export function getGainSummary(accounts) {
     realizedUnknownTerm: 0,
     sellCount: 0,
     sellsWithoutBasis: 0, // proposed sells whose gain can't be estimated
+    taxable: bucket(),
+    sheltered: bucket(),
+    shelteredAccountCount: 0,
   };
   for (const acct of accounts) {
+    const side = isSheltered(acct) ? summary.sheltered : summary.taxable;
+    if (isSheltered(acct)) summary.shelteredAccountCount += 1;
     for (const h of acct.holdings) {
       const isCash = CASH_TICKER_RE.test(h.ticker || '');
       const mv = getMarketValue(h);
@@ -84,16 +123,20 @@ export function getGainSummary(accounts) {
       if (unrealized != null) {
         summary.unrealized += unrealized;
         summary.positionsWithBasis += 1;
+        side.unrealized += unrealized;
+        side.positionsWithBasis += 1;
       } else if (!isCash && mv > 0) {
         summary.positionsWithoutBasis += 1;
       }
-      const realized = getRealizedGain(h);
+      const realized = getRealizedGain(h, asOf);
       if (realized != null) {
         summary.realized += realized.amount;
         summary.sellCount += 1;
-        if (realized.term === true) summary.realizedLT += realized.amount;
-        else if (realized.term === false) summary.realizedST += realized.amount;
-        else summary.realizedUnknownTerm += realized.amount;
+        side.realized += realized.amount;
+        side.sellCount += 1;
+        if (realized.term === true) { summary.realizedLT += realized.amount; side.realizedLT += realized.amount; }
+        else if (realized.term === false) { summary.realizedST += realized.amount; side.realizedST += realized.amount; }
+        else { summary.realizedUnknownTerm += realized.amount; side.realizedUnknownTerm += realized.amount; }
       } else if (!isCash && (h.proposedChange || 0) < 0 && mv > 0 && !hasKnownBasis(h)) {
         summary.sellsWithoutBasis += 1;
       }

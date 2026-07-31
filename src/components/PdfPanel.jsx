@@ -13,6 +13,7 @@ import {
 } from '../utils/calculations';
 import { formatCurrency, formatPercent, formatDate, formatDateFile } from '../utils/formatting';
 import { computeExpenseData, readExpenseCache } from '../utils/expenses';
+import { isSheltered, taxStatusLabel } from '../data/accountTax';
 import { loadPdfOptions, savePdfOptions, clearPdfOptions } from '../utils/pdfOptions';
 
 const PALETTES = {
@@ -427,8 +428,11 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         const u = getUnrealizedGain(h);
         return u == null ? '—' : formatCurrency(u);
       },
-      realized: (h) => {
-        const r = getRealizedGain(h);
+      // Realized gain is a TAX estimate. Inside an IRA / 401(k) / Roth there
+      // is no taxable event, so the cell stays blank rather than printing a
+      // number the client could mistake for a tax liability.
+      realized: (h, _acctTotal, sheltered) => {
+        const r = sheltered ? null : getRealizedGain(h, assumptions.asOfDate);
         if (r == null) return '';
         const term = r.term === true ? ' LT' : r.term === false ? ' ST' : '';
         return `${formatCurrency(r.amount)}${term}`;
@@ -438,10 +442,10 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       pctAcct: (h, acctTotal) => formatPercent(acctTotal > 0 ? getPostValue(h) / acctTotal : 0),
     };
     // Gain amounts read green/orange like the Difference column does
-    function gainColor(h, key) {
+    function gainColor(h, key, sheltered) {
       let v = null;
       if (key === 'unrealized') v = getUnrealizedGain(h);
-      if (key === 'realized') v = getRealizedGain(h)?.amount ?? null;
+      if (key === 'realized') v = sheltered ? null : (getRealizedGain(h, assumptions.asOfDate)?.amount ?? null);
       if (v == null) return {};
       if (v > 0.005) return { color: c.positive };
       if (v < -0.005) return { color: c.negative };
@@ -455,7 +459,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
     return orderedAccounts.filter(a => a.holdings.some(h => h.ticker)).map(acct => {
       const acctTotal = getAccountTotal(acct.holdings);
       const unmanaged = acct.managed === false;
-      const gains = gainColsOn ? getGainSummary([acct]) : null;
+      const sheltered = isSheltered(acct);
+      const gains = gainColsOn ? getGainSummary([acct], assumptions.asOfDate) : null;
       const showGainsLine = gains && (gains.sellCount > 0 || gains.sellsWithoutBasis > 0 || gains.positionsWithBasis > 0);
       // Basis / unrealized in the page header, but only when the advisor
       // asked for gain reporting AND this account actually has basis entered
@@ -478,7 +483,7 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
           <View style={s.header}>
             <Text style={s.title}>{acct.name}</Text>
             <Text style={s.subtitle}>
-              {`Total: ${formatCurrency(acctTotal)}${unmanaged ? ' — Unmanaged' : ''}`}
+              {`Total: ${formatCurrency(acctTotal)}${unmanaged ? ' — Unmanaged' : ''}${sheltered ? ` — ${taxStatusLabel(acct)}` : ''}`}
               {showHeaderGains ? `  |  Basis: ${formatCurrency(basisTotal)}  |  Unrealized: ` : ''}
               {showHeaderGains
                 ? <Text style={headerGainColor ? { color: headerGainColor } : {}}>{signedCurrency(gains.unrealized)}</Text>
@@ -496,8 +501,8 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
             // security names previously split across page boundaries
             <View key={h.id || i} style={[s.row, i % 2 === 0 ? s.rowEven : s.rowAlt]} wrap={false}>
               {visCols.map(col => (
-                <Text key={col.key} style={[s.cell, { fontSize: fs, width: col.width, textAlign: col.align }, cellGutter(col.align), gainColor(h, col.key)]}>
-                  {valGetters[col.key](h, acctTotal)}
+                <Text key={col.key} style={[s.cell, { fontSize: fs, width: col.width, textAlign: col.align }, cellGutter(col.align), gainColor(h, col.key, sheltered)]}>
+                  {valGetters[col.key](h, acctTotal, sheltered)}
                 </Text>
               ))}
             </View>
@@ -512,16 +517,25 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
                     : ''}
                 </Text>
               )}
-              {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
-                <Text style={{ fontSize: 7, color: c.steelBlue }}>
-                  Proposed sells realize est. {formatCurrency(gains.realized)}
-                  {(gains.realizedLT !== 0 || gains.realizedST !== 0)
-                    ? ` (${formatCurrency(gains.realizedLT)} long-term / ${formatCurrency(gains.realizedST)} short-term${gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})`
-                    : ''}
-                  {gains.sellsWithoutBasis > 0
-                    ? ` — ${gains.sellsWithoutBasis} proposed sell${gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis, not included`
-                    : ''}
-                </Text>
+              {sheltered ? (
+                (gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
+                  <Text style={{ fontSize: 7, color: c.steelBlue }}>
+                    {taxStatusLabel(acct)} account — proposed sells realize no taxable gain.
+                    {' '}Gain/loss shown is performance only.
+                  </Text>
+                )
+              ) : (
+                (gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
+                  <Text style={{ fontSize: 7, color: c.steelBlue }}>
+                    Proposed sells realize est. {formatCurrency(gains.realized)}
+                    {(gains.realizedLT !== 0 || gains.realizedST !== 0)
+                      ? ` (${formatCurrency(gains.realizedLT)} long-term / ${formatCurrency(gains.realizedST)} short-term${gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})`
+                      : ''}
+                    {gains.sellsWithoutBasis > 0
+                      ? ` — ${gains.sellsWithoutBasis} proposed sell${gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis, not included`
+                      : ''}
+                  </Text>
+                )
               )}
             </View>
           )}

@@ -7,6 +7,7 @@ import {
   getUnrealizedGain, getRealizedGain, getGainSummary, hasKnownBasis, isLongTerm,
 } from '../utils/calculations';
 import { formatCurrency, formatPercent } from '../utils/formatting';
+import { getTaxStatus, isSheltered, TAX_STATUSES, TAX_STATUS_OPTIONS } from '../data/accountTax';
 
 function formatWithCommas(value, decimals = 2) {
   if (value === 0 || value === '' || value == null) return '';
@@ -106,8 +107,9 @@ function PriceFreshnessDot({ status, hasPrice }) {
   return null;
 }
 
-function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn, dragProps }) {
+function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn, sheltered, dragProps }) {
   const {
+    assumptions,
     updateHolding, removeHolding, moveHolding,
     customSecurities, addCustomSecurity, updateCustomSecurity,
     resolvedSecurities, resolveTicker, verifyResolved, lookupSessionHolding,
@@ -192,9 +194,11 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
   const pv = getPostValue(holding);
   const pctOfAccount = accountTotal > 0 ? pv / accountTotal : 0;
   const unrealized = getUnrealizedGain(holding);
-  const realized = getRealizedGain(holding);
+  // Realized gain is a TAX estimate — suppress it entirely inside sheltered
+  // accounts rather than showing a number that has no tax meaning.
+  const realized = sheltered ? null : getRealizedGain(holding, assumptions.asOfDate);
   const unrealizedPct = unrealized != null && holding.costBasis > 0 ? unrealized / holding.costBasis : null;
-  const holdingTerm = isLongTerm(holding.acquiredDate); // true LT / false ST / null unknown
+  const holdingTerm = sheltered ? null : isLongTerm(holding.acquiredDate, assumptions.asOfDate);
   const isCashRow = /^\$+$/.test(ticker || '');
 
   const handleTickerBlur = async () => {
@@ -514,7 +518,7 @@ function HoldingRow({ holding, accountId, accountTotal, isFirst, isLast, sweepOn
 }
 
 function AccountTab({ account }) {
-  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep, toggleManaged, sortHoldings, reorderHolding } = useAppContext();
+  const { addHolding, renameAccount, removeAccount, accounts, toggleSweep, toggleManaged, sortHoldings, reorderHolding, setAccountTaxStatus, assumptions } = useAppContext();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(account.name);
   // Last sort applied via header click: { label, ascending } — indicator only;
@@ -537,7 +541,9 @@ function AccountTab({ account }) {
   const changeTotal = account.holdings.reduce((s, h) => s + (h.proposedChange || 0), 0);
   const isBalanced = Math.abs(changeTotal) < 0.005;
   const basisTotal = account.holdings.reduce((s, h) => s + (hasKnownBasis(h) ? h.costBasis : 0), 0);
-  const gains = getGainSummary([account]);
+  const gains = getGainSummary([account], assumptions.asOfDate);
+  const sheltered = isSheltered(account);
+  const taxStatus = getTaxStatus(account);
 
   const saveName = () => {
     renameAccount(account.id, editName || account.name);
@@ -592,6 +598,21 @@ function AccountTab({ account }) {
           />
           Managed
         </label>
+        <label
+          className="flex items-center gap-1.5 text-sm text-text-primary/60"
+          title={TAX_STATUSES[taxStatus].note + ' Guessed from the account name; change it if the registration differs.'}
+        >
+          Tax
+          <select
+            value={taxStatus}
+            onChange={e => setAccountTaxStatus(account.id, e.target.value)}
+            className="bg-dark-bg border border-border text-text-primary px-1 py-1 rounded text-xs focus:outline-none focus:border-accent"
+          >
+            {TAX_STATUS_OPTIONS.map(o => (
+              <option key={o.key} value={o.key} className="bg-dark-bg">{o.label}</option>
+            ))}
+          </select>
+        </label>
         {accounts.length > 1 && (
           <button
             onClick={() => removeAccount(account.id)}
@@ -637,6 +658,7 @@ function AccountTab({ account }) {
                 isFirst={idx === 0}
                 isLast={idx === account.holdings.length - 1}
                 sweepOn={!!account.sweepToCash}
+                sheltered={sheltered}
                 dragProps={{
                   isDragging: dragIdx === idx,
                   isDropTarget: overIdx === idx && dragIdx !== null && dragIdx !== idx,
@@ -678,6 +700,7 @@ function AccountTab({ account }) {
                 className={`px-2 py-2 text-right ${gains.unrealized > 0.005 ? 'text-positive' : gains.unrealized < -0.005 ? 'text-negative' : ''}`}
                 title={gains.positionsWithBasis > 0
                   ? `Unrealized gain/loss across the ${gains.positionsWithBasis} position(s) with basis entered`
+                    + (sheltered ? ' — performance only; this account is not taxable on gains' : '')
                   : undefined}
               >
                 {gains.positionsWithBasis > 0 ? formatCurrency(gains.unrealized) : ''}
@@ -695,19 +718,31 @@ function AccountTab({ account }) {
             {(gains.sellCount > 0 || gains.sellsWithoutBasis > 0) && (
               <tr className="bg-dark-bg/60">
                 <td colSpan={HOLDING_COLS.length} className="px-2 py-1.5 text-xs text-steel-blue">
-                  Proposed sells realize ≈{' '}
-                  <span className={gains.realized >= 0 ? 'text-positive font-semibold' : 'text-negative font-semibold'}>
-                    {formatCurrency(gains.realized)}
-                  </span>
-                  {' '}in this account
-                  {(gains.realizedLT !== 0 || gains.realizedST !== 0) && (
-                    <> ({formatCurrency(gains.realizedLT)} long-term / {formatCurrency(gains.realizedST)} short-term
-                    {gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})</>
-                  )}
-                  {gains.sellsWithoutBasis > 0 && (
-                    <span className="text-negative/80">
-                      {' '}— {gains.sellsWithoutBasis} proposed sell{gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis (not included)
-                    </span>
+                  {sheltered ? (
+                    // Selling inside an IRA / 401(k) / Roth realizes nothing
+                    // taxable — reporting a capital gain here would be wrong.
+                    <>
+                      <span className="text-text-primary/80 font-semibold">{TAX_STATUSES[taxStatus].label} account</span>
+                      {' '}— proposed sells realize <span className="font-semibold">no taxable gain</span>.
+                      {' '}Position gain/loss is shown for performance only.
+                    </>
+                  ) : (
+                    <>
+                      Proposed sells realize ≈{' '}
+                      <span className={gains.realized >= 0 ? 'text-positive font-semibold' : 'text-negative font-semibold'}>
+                        {formatCurrency(gains.realized)}
+                      </span>
+                      {' '}in this account
+                      {(gains.realizedLT !== 0 || gains.realizedST !== 0) && (
+                        <> ({formatCurrency(gains.realizedLT)} long-term / {formatCurrency(gains.realizedST)} short-term
+                        {gains.realizedUnknownTerm !== 0 ? ` / ${formatCurrency(gains.realizedUnknownTerm)} unknown term` : ''})</>
+                      )}
+                      {gains.sellsWithoutBasis > 0 && (
+                        <span className="text-negative/80">
+                          {' '}— {gains.sellsWithoutBasis} proposed sell{gains.sellsWithoutBasis > 1 ? 's' : ''} missing cost basis (not included)
+                        </span>
+                      )}
+                    </>
                   )}
                 </td>
               </tr>
