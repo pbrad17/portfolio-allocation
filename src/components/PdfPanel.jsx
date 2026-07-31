@@ -13,6 +13,7 @@ import {
 } from '../utils/calculations';
 import { formatCurrency, formatPercent, formatDate, formatDateFile } from '../utils/formatting';
 import { computeExpenseData, readExpenseCache } from '../utils/expenses';
+import { loadPdfOptions, savePdfOptions, clearPdfOptions } from '../utils/pdfOptions';
 
 const PALETTES = {
   dark: {
@@ -67,6 +68,50 @@ const ALL_SUM_COLS = [
 // Default order of the toggleable Summary columns (Category is locked first)
 const DEFAULT_SUM_COL_ORDER = ALL_SUM_COLS.filter(c => c.toggleable).map(c => c.key);
 
+// Every option on this tab, at its shipped default. Also the merge target for
+// whatever localStorage hands back, so adding or removing a column here is
+// enough — stored copies from older versions adapt (see utils/pdfOptions).
+const PDF_OPTION_DEFAULTS = {
+  includeSections: {
+    summary: true,
+    capitalization: true,
+    securities: true,
+    expenses: false, // advisor opts in
+  },
+  includeColumns: {
+    ticker: true,
+    qty: true,
+    price: true,
+    // Capital-gain columns are opt-in so existing reports look unchanged
+    costBasis: false,
+    unrealized: false,
+    realized: false,
+    change: true,
+    postValue: true,
+    pctAcct: true,
+  },
+  includeSummaryColumns: {
+    portfolioDollar: true,
+    portfolioPct: true,
+    overallDollar: true,
+    overallPct: true,
+    targetPct: true,
+    reallocation: true,
+    difference: true,
+  },
+  includeCapColumns: {
+    currentDollar: true,
+    currentPct: true,
+    changeDollar: true,
+    postDollar: true,
+    postPct: true,
+    targetPct: true,
+    difference: true,
+  },
+  sectionOrder: ['summary', 'capitalization', 'securities', 'expenses'],
+  summaryColOrder: DEFAULT_SUM_COL_ORDER,
+};
+
 function getVisibleSumCols(includeSummaryColumns, summaryColOrder) {
   const order = ['category', ...(summaryColOrder || DEFAULT_SUM_COL_ORDER)];
   const visible = order
@@ -105,6 +150,13 @@ function holdingsFontSize(colCount) {
   if (colCount <= 9) return 7;
   if (colCount <= 11) return 6.5;
   return 6;
+}
+
+// Gains read as signed figures in the account header ("+$1,204,880") so the
+// direction is unmistakable next to the neutral Total and Basis values.
+// formatCurrency already carries the minus sign for losses.
+function signedCurrency(value) {
+  return (value > 0.005 ? '+' : '') + formatCurrency(value);
 }
 
 // Horizontal gutter so left-aligned text (long security names especially)
@@ -405,12 +457,33 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
       const unmanaged = acct.managed === false;
       const gains = gainColsOn ? getGainSummary([acct]) : null;
       const showGainsLine = gains && (gains.sellCount > 0 || gains.sellsWithoutBasis > 0 || gains.positionsWithBasis > 0);
+      // Basis / unrealized in the page header, but only when the advisor
+      // asked for gain reporting AND this account actually has basis entered
+      // — an account with none keeps the original one-value subtitle rather
+      // than printing a meaningless "Basis: $0". Stays a single line so the
+      // header block height (and therefore pagination) is unchanged.
+      const showHeaderGains = !!gains && gains.positionsWithBasis > 0;
+      const basisTotal = showHeaderGains
+        ? acct.holdings.reduce((sum, h) => sum + (hasKnownBasis(h) ? h.costBasis : 0), 0)
+        : 0;
+      const headerGainColor = !showHeaderGains ? undefined
+        : gains.unrealized > 0.005 ? c.positive
+        : gains.unrealized < -0.005 ? c.negative
+        : undefined;
+      const basisCoverage = showHeaderGains && gains.positionsWithoutBasis > 0
+        ? ` (basis on ${gains.positionsWithBasis} of ${gains.positionsWithBasis + gains.positionsWithoutBasis} positions)`
+        : '';
       return (
         <Page key={acct.id} size="LETTER" style={s.page}>
           <View style={s.header}>
             <Text style={s.title}>{acct.name}</Text>
             <Text style={s.subtitle}>
-              Total: {formatCurrency(acctTotal)}{unmanaged ? ' — Unmanaged' : ''}
+              {`Total: ${formatCurrency(acctTotal)}${unmanaged ? ' — Unmanaged' : ''}`}
+              {showHeaderGains ? `  |  Basis: ${formatCurrency(basisTotal)}  |  Unrealized: ` : ''}
+              {showHeaderGains
+                ? <Text style={headerGainColor ? { color: headerGainColor } : {}}>{signedCurrency(gains.unrealized)}</Text>
+                : ''}
+              {basisCoverage}
             </Text>
           </View>
           <View style={s.tableHeader}>
@@ -571,44 +644,33 @@ export default function PdfPanel() {
   const { accounts, assumptions, theme, showZeroRows, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [generating, setGenerating] = useState(false);
-  const [includeSections, setIncludeSections] = useState({
-    summary: true,
-    capitalization: true,
-    securities: true,
-    expenses: false, // advisor opts in
-  });
-  const [includeColumns, setIncludeColumns] = useState({
-    ticker: true,
-    qty: true,
-    price: true,
-    // Capital-gain columns are opt-in so existing reports look unchanged
-    costBasis: false,
-    unrealized: false,
-    realized: false,
-    change: true,
-    postValue: true,
-    pctAcct: true,
-  });
-  const [includeSummaryColumns, setIncludeSummaryColumns] = useState({
-    portfolioDollar: true,
-    portfolioPct: true,
-    overallDollar: true,
-    overallPct: true,
-    targetPct: true,
-    reallocation: true,
-    difference: true,
-  });
-  const [includeCapColumns, setIncludeCapColumns] = useState({
-    currentDollar: true,
-    currentPct: true,
-    changeDollar: true,
-    postDollar: true,
-    postPct: true,
-    targetPct: true,
-    difference: true,
-  });
-  const [sectionOrder, setSectionOrder] = useState(['summary', 'capitalization', 'securities', 'expenses']);
-  const [summaryColOrder, setSummaryColOrder] = useState(DEFAULT_SUM_COL_ORDER);
+
+  // This panel unmounts on every tab change, so the options live in
+  // localStorage and are restored (merged over the current defaults) on mount.
+  const [restored] = useState(() => loadPdfOptions(PDF_OPTION_DEFAULTS));
+  const [includeSections, setIncludeSections] = useState(restored.includeSections);
+  const [includeColumns, setIncludeColumns] = useState(restored.includeColumns);
+  const [includeSummaryColumns, setIncludeSummaryColumns] = useState(restored.includeSummaryColumns);
+  const [includeCapColumns, setIncludeCapColumns] = useState(restored.includeCapColumns);
+  const [sectionOrder, setSectionOrder] = useState(restored.sectionOrder);
+  const [summaryColOrder, setSummaryColOrder] = useState(restored.summaryColOrder);
+
+  useEffect(() => {
+    savePdfOptions({
+      includeSections, includeColumns, includeSummaryColumns,
+      includeCapColumns, sectionOrder, summaryColOrder,
+    });
+  }, [includeSections, includeColumns, includeSummaryColumns, includeCapColumns, sectionOrder, summaryColOrder]);
+
+  const resetOptions = () => {
+    clearPdfOptions();
+    setIncludeSections({ ...PDF_OPTION_DEFAULTS.includeSections });
+    setIncludeColumns({ ...PDF_OPTION_DEFAULTS.includeColumns });
+    setIncludeSummaryColumns({ ...PDF_OPTION_DEFAULTS.includeSummaryColumns });
+    setIncludeCapColumns({ ...PDF_OPTION_DEFAULTS.includeCapColumns });
+    setSectionOrder([...PDF_OPTION_DEFAULTS.sectionOrder]);
+    setSummaryColOrder([...PDF_OPTION_DEFAULTS.summaryColOrder]);
+  };
 
   const toggleSection = (key) => {
     setIncludeSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -723,7 +785,16 @@ export default function PdfPanel() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-accent mb-4">Generate PDF Report</h2>
+      <div className="flex items-center justify-between gap-4 mb-4 max-w-4xl">
+        <h2 className="text-xl font-bold text-accent">Generate PDF Report</h2>
+        <button
+          onClick={resetOptions}
+          className="text-xs text-steel-blue hover:text-accent underline-offset-2 hover:underline transition-colors"
+          title="Restore the shipped defaults for sections, columns and ordering"
+        >
+          Reset to defaults
+        </button>
+      </div>
 
       <div className="space-y-4 max-w-4xl">
         {/* Section selection */}
@@ -904,6 +975,7 @@ export default function PdfPanel() {
 
         <div className="text-xs text-text-primary/40">
           The report will include a cover header on the first page regardless of section selection.
+          These options are remembered on this browser between visits — use Reset to defaults to start over.
         </div>
       </div>
     </div>
