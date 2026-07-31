@@ -329,9 +329,32 @@ async function lookupSymbol(symbol) {
     confidence,
     instrumentType: meta.instrumentType || null,
     ...expenseFields,
+    ...extractDividendYield(summary),
     ...(country ? { country } : {}),
     ...(reason ? { reason } : {}),
   };
+}
+
+// Trailing dividend yield as a DECIMAL FRACTION (0.0182 = 1.82%), for the
+// income projection on the Analysis tab.
+//
+// Source order matters. `summaryDetail.dividendYield` is the fund/equity
+// forward-looking figure and is the one to prefer; `trailingAnnualDividendYield`
+// is the fallback. `yield` is what Yahoo reports for many bond and money-market
+// funds, which is exactly where the other two are missing.
+//
+// A missing yield is reported as ABSENT, never as zero — the projection counts
+// unknown positions as uncovered rather than assuming they pay nothing, the
+// same accuracy rule the expense ratios follow.
+function extractDividendYield(summary) {
+  const detail = summary?.summaryDetail || {};
+  for (const candidate of [detail.dividendYield, detail.yield, detail.trailingAnnualDividendYield]) {
+    const value = raw(candidate);
+    if (value != null && value > 0) {
+      return { dividendYield: value };
+    }
+  }
+  return {};
 }
 
 export default async function handler(req, res) {

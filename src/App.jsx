@@ -4,6 +4,7 @@ import AssumptionsPanel from './components/AssumptionsPanel';
 import SecuritiesPanel from './components/SecuritiesPanel';
 import SummaryPanel from './components/SummaryPanel';
 import CapitalizationPanel from './components/CapitalizationPanel';
+import AnalysisPanel from './components/AnalysisPanel';
 import PdfPanel from './components/PdfPanel';
 import DatabasePanel from './components/DatabasePanel';
 import ExpensesPanel from './components/ExpensesPanel';
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'securities', label: 'Securities' },
   { id: 'summary', label: 'Summary' },
   { id: 'capitalization', label: 'Capitalization' },
+  { id: 'analysis', label: 'Analysis' },
   { id: 'expenses', label: 'Expenses' },
   { id: 'pdf', label: 'PDF Report' },
   { id: 'database', label: 'Database' },
@@ -119,6 +121,7 @@ function AppContent() {
         {activeTab === 'securities' && <SecuritiesPanel />}
         {activeTab === 'summary' && <SummaryPanel />}
         {activeTab === 'capitalization' && <CapitalizationPanel />}
+        {activeTab === 'analysis' && <AnalysisPanel />}
         {activeTab === 'expenses' && <ExpensesPanel />}
         {activeTab === 'pdf' && <PdfPanel />}
         {activeTab === 'database' && <DatabasePanel />}
