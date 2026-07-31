@@ -3,6 +3,7 @@ import { useAppContext } from '../AppContext';
 import { TARGET_PROFILES } from '../data/targetProfiles';
 import { getSummaryData } from '../utils/calculations';
 import { PIE_COLORS } from '../data/colors';
+import { buildSlices, sideWalls, sliceTopPath, sideWallPath } from '../utils/pieGeometry';
 
 const WIDTH = 600;
 const HEIGHT = 460;
@@ -19,120 +20,34 @@ function darkenColor(hex, factor = 0.6) {
   return `rgb(${r},${g},${b})`;
 }
 
-function ellipsePoint(cx, cy, rx, ry, angle) {
-  return {
-    x: cx + rx * Math.cos(angle),
-    y: cy + ry * Math.sin(angle),
-  };
-}
-
-// Build the arc path for a slice on the top ellipse face
-function sliceTopPath(cx, cy, rx, ry, startAngle, endAngle) {
-  const start = ellipsePoint(cx, cy, rx, ry, startAngle);
-  const end = ellipsePoint(cx, cy, rx, ry, endAngle);
-  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-  return `M ${cx},${cy} L ${start.x},${start.y} A ${rx},${ry} 0 ${largeArc} 1 ${end.x},${end.y} Z`;
-}
-
-// Build the side face path for 3D depth (only for slices whose arc crosses the bottom half)
-function sliceSidePath(cx, cy, rx, ry, depth, startAngle, endAngle) {
-  // Only draw sides for the portion visible at the bottom (angles between 0 and PI)
-  const visStart = Math.max(startAngle, 0);
-  const visEnd = Math.min(endAngle, Math.PI * 2);
-
-  // We need to draw sides for arcs that are in the "front" (bottom half: angle 0 to PI)
-  const sideStart = Math.max(visStart, 0);
-  const sideEnd = Math.min(visEnd, Math.PI);
-
-  if (sideStart >= sideEnd) return null;
-
-  const p1 = ellipsePoint(cx, cy, rx, ry, sideStart);
-  const p2 = ellipsePoint(cx, cy, rx, ry, sideEnd);
-  const largeArc = sideEnd - sideStart > Math.PI ? 1 : 0;
-
-  return `M ${p1.x},${p1.y} A ${rx},${ry} 0 ${largeArc} 1 ${p2.x},${p2.y} L ${p2.x},${p2.y + depth} A ${rx},${ry} 0 ${largeArc} 0 ${p1.x},${p1.y + depth} Z`;
-}
+// Geometry lives in utils/pieGeometry.js so the slice and wall maths can be
+// unit-tested rather than eyeballed.
 
 function Pie3DChart({ data, theme }) {
   const textColor = theme === 'light' ? '#1A2E3D' : '#FFFFFF';
 
-  // Convert data to angles
-  const total = data.reduce((s, d) => s + d.value, 0);
-  let cumAngle = -Math.PI / 2; // start from top
-  const slices = data.map((d, i) => {
-    const startAngle = cumAngle;
-    const sweep = total > 0 ? (d.value / total) * Math.PI * 2 : 0;
-    cumAngle += sweep;
-    return {
-      ...d,
-      startAngle,
-      endAngle: startAngle + sweep,
-      midAngle: startAngle + sweep / 2,
-      color: PIE_COLORS[i % PIE_COLORS.length],
-      index: i,
-    };
-  });
-
-  // Normalize angles to 0..2PI for side rendering
-  const normalizeAngle = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const slices = buildSlices(data).map(s => ({
+    ...s,
+    color: PIE_COLORS[s.index % PIE_COLORS.length],
+  }));
+  // Back-to-front so nearer walls paint over farther ones
+  const walls = sideWalls(slices);
 
   return (
     <svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
-      {/* 3D side faces - render back-to-front (top half first, then bottom half) */}
-      {slices.map((slice) => {
-        // Break slice into segments that cross 0..PI range for side rendering
-        const paths = [];
-        const steps = 1;
-        const nStart = normalizeAngle(slice.startAngle);
-        const sweep = slice.endAngle - slice.startAngle;
-
-        // For side faces, we render segments where the normalized angle is in [0, PI]
-        // This means the "front" of the 3D pie
-        const segStart = normalizeAngle(slice.startAngle);
-        const segEnd = normalizeAngle(slice.endAngle);
-
-        const sidePath = sliceSidePath(CX, CY, RX, RY, DEPTH, segStart, segEnd);
-        if (sidePath) {
-          paths.push(
-            <path
-              key={`side-${slice.index}`}
-              d={sidePath}
-              fill={darkenColor(slice.color, 0.55)}
-              stroke={darkenColor(slice.color, 0.4)}
-              strokeWidth={0.5}
-            />
-          );
-        }
-
-        // Handle wrap-around (slice crosses 2PI/0 boundary)
-        if (segEnd < segStart && sweep < Math.PI * 2) {
-          const wrapPath = sliceSidePath(CX, CY, RX, RY, DEPTH, 0, segEnd);
-          if (wrapPath) {
-            paths.push(
-              <path
-                key={`side-wrap-${slice.index}`}
-                d={wrapPath}
-                fill={darkenColor(slice.color, 0.55)}
-                stroke={darkenColor(slice.color, 0.4)}
-                strokeWidth={0.5}
-              />
-            );
-          }
-          const wrapPath2 = sliceSidePath(CX, CY, RX, RY, DEPTH, segStart, Math.PI);
-          if (wrapPath2) {
-            paths.push(
-              <path
-                key={`side-wrap2-${slice.index}`}
-                d={wrapPath2}
-                fill={darkenColor(slice.color, 0.55)}
-                stroke={darkenColor(slice.color, 0.4)}
-                strokeWidth={0.5}
-              />
-            );
-          }
-        }
-
-        return paths;
+      {/* Extruded side walls — front rim only, painted back to front */}
+      {walls.map((wall, i) => {
+        const d = sideWallPath(CX, CY, RX, RY, DEPTH, wall.start, wall.end);
+        if (!d) return null;
+        return (
+          <path
+            key={`wall-${wall.slice.index}-${i}`}
+            d={d}
+            fill={darkenColor(wall.slice.color, 0.55)}
+            stroke={darkenColor(wall.slice.color, 0.4)}
+            strokeWidth={0.5}
+          />
+        );
       })}
 
       {/* Outer rim - ellipse at bottom for depth illusion */}
@@ -162,7 +77,7 @@ function Pie3DChart({ data, theme }) {
         const LEFT_MIN = 5;
         const RIGHT_MAX = WIDTH - 5;
         const labels = slices
-          .filter(slice => slice.value / total >= 0.02)
+          .filter(slice => slice.share >= 0.02)
           .map(slice => {
             let x = CX + labelRadius * Math.cos(slice.midAngle);
             const y = CY + labelRY * Math.sin(slice.midAngle);

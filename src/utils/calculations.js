@@ -275,7 +275,71 @@ export function getSectionTotal(rows, categories) {
   );
 }
 
-export function getCapitalizationData(accounts, targetProfile) {
+// Equity that does NOT carry a style box.
+//
+// The capitalization page only models the 18 Domestic/Foreign size x
+// value-growth combinations. Emerging Markets, Real Estate and Other Equity
+// are equity but have no size/style axis in this model, and a composite
+// custom security is split across categories rather than boxed. All of it was
+// simply absent from the page while the total row still read "Total ... 100%",
+// which implies a coverage the page does not have. This quantifies the gap so
+// both the tab and the PDF can state it.
+const EQUITY_CATEGORIES = new Set(SUMMARY_SECTIONS.Equities);
+const BOXED_CATEGORIES = new Set(['Domestic', 'Foreign']);
+
+function getEquityCoverage(accounts, customSecurities, styledCurrent, styledPost) {
+  const buckets = new Map();
+  const add = (category, current, post) => {
+    const entry = buckets.get(category) || { category, current: 0, post: 0 };
+    entry.current += current;
+    entry.post += post;
+    buckets.set(category, entry);
+  };
+
+  for (const acct of accounts) {
+    for (const h of acct.holdings) {
+      const current = getMarketValue(h);
+      const post = getPostValue(h);
+      if (current === 0 && post === 0) continue;
+
+      if (h.style?.startsWith('Custom: ')) {
+        // Only the equity slice of a composite counts as missing equity
+        const cs = customSecurities?.[h.style.slice(8)];
+        if (!cs) continue;
+        let equityShare = 0;
+        for (const [cat, pct] of Object.entries(cs.allocations || {})) {
+          if (EQUITY_CATEGORIES.has(cat)) equityShare += pct;
+        }
+        if (equityShare > 0) add('Custom securities', current * equityShare, post * equityShare);
+        continue;
+      }
+
+      const category = STYLE_TO_CATEGORY[h.style];
+      if (!category || !EQUITY_CATEGORIES.has(category) || BOXED_CATEGORIES.has(category)) continue;
+      add(category, current, post);
+    }
+  }
+
+  const excluded = [...buckets.values()].sort((a, b) => b.post - a.post);
+  const excludedCurrent = excluded.reduce((s, e) => s + e.current, 0);
+  const excludedPost = excluded.reduce((s, e) => s + e.post, 0);
+  const totalEquityPost = styledPost + excludedPost;
+
+  return {
+    styledCurrent,
+    styledPost,
+    excluded,
+    excludedCurrent,
+    excludedPost,
+    totalEquityCurrent: styledCurrent + excludedCurrent,
+    totalEquityPost,
+    // Share of household equity this page actually represents
+    coveragePct: totalEquityPost > 0 ? styledPost / totalEquityPost : 1,
+    complete: excludedPost === 0 && excludedCurrent === 0,
+  };
+}
+
+export function getCapitalizationData(accounts, targetProfile, customSecurities = {}) {
   const total = getPortfolioTotal(accounts);
 
   const domesticPrefix = 'Domestic';
@@ -439,5 +503,17 @@ export function getCapitalizationData(accounts, targetProfile) {
     targetTotalPct: equityTargetTotal > 0 ? 1 : 0,
   };
 
-  return { domestic, foreign, combined, portfolioTotal: total };
+  return {
+    domestic,
+    foreign,
+    combined,
+    portfolioTotal: total,
+    // Every percentage above is a share of STYLE-BOXED equity. `coverage`
+    // says how much equity that actually is.
+    coverage: getEquityCoverage(
+      accounts, customSecurities,
+      domestic.currentTotal + foreign.currentTotal,
+      domestic.postTotal + foreign.postTotal
+    ),
+  };
 }

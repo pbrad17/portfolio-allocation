@@ -408,6 +408,19 @@ function SummaryDoc({ assumptions, summaryRows, summaryTotal, sections, capData,
         {renderCapSection('Domestic Equity', capData.domestic)}
         {renderCapSection('Foreign Equity', capData.foreign)}
         {renderCapSection('Combined Equity', capData.combined)}
+        {/* Percentages here are shares of style-boxed equity. If any equity
+            has no style box (Emerging Markets, Real Estate, composites), the
+            page has to say so rather than let the 100% total imply coverage
+            it does not have. */}
+        <Text style={{ fontSize: 6.5, color: c.steelBlue, marginTop: 6, paddingHorizontal: 4 }}>
+          {capData.coverage && !capData.coverage.complete
+            ? `Percentages are shares of style-boxed equity — ${formatCurrency(capData.coverage.styledPost)} of ` +
+              `${formatCurrency(capData.coverage.totalEquityPost)} (${formatPercent(capData.coverage.coveragePct)}). ` +
+              `Excluded, having no size / value-growth style box: ` +
+              capData.coverage.excluded.map(e => `${e.category} ${formatCurrency(e.post)}`).join(', ') +
+              `. These appear on the Summary page.`
+            : 'Percentages are shares of style-boxed equity (the Domestic and Foreign size / value-growth grid).'}
+        </Text>
       </Page>
     );
   }
@@ -731,8 +744,8 @@ export default function PdfPanel() {
 
   // Capitalization PDF page reflects managed accounts only
   const capData = useMemo(
-    () => getCapitalizationData(accounts.filter(a => a.managed !== false), targetProfile),
-    [accounts, targetProfile]
+    () => getCapitalizationData(accounts.filter(a => a.managed !== false), targetProfile, customSecurities),
+    [accounts, targetProfile, customSecurities]
   );
 
   const sections = [

@@ -141,7 +141,7 @@ function CapTable({ title, section, showZeroRows, columns }) {
 }
 
 export default function CapitalizationPanel() {
-  const { accounts, assumptions, showZeroRows, setShowZeroRows } = useAppContext();
+  const { accounts, assumptions, showZeroRows, setShowZeroRows, customSecurities } = useAppContext();
   const targetProfile = TARGET_PROFILES[assumptions.targetProfile] || {};
   const [scope, setScope] = useState('managed');
 
@@ -167,9 +167,9 @@ export default function CapitalizationPanel() {
     [accounts, scope]
   );
 
-  const { domestic, foreign, combined } = useMemo(
-    () => getCapitalizationData(scopedAccounts, targetProfile),
-    [scopedAccounts, targetProfile]
+  const { domestic, foreign, combined, coverage } = useMemo(
+    () => getCapitalizationData(scopedAccounts, targetProfile, customSecurities),
+    [scopedAccounts, targetProfile, customSecurities]
   );
 
   return (
@@ -214,9 +214,50 @@ export default function CapitalizationPanel() {
         </div>
       </div>
 
+      <p className="text-xs text-text-primary/50 -mt-2 mb-4">
+        Percentages on this page are shares of <span className="text-text-primary/80">style-boxed equity</span> —
+        the Domestic and Foreign size / value-growth grid — not of the whole portfolio.
+      </p>
+
       <CapTable title="Domestic Equity" section={domestic} showZeroRows={showZeroRows} columns={visibleColumns} />
       <CapTable title="Foreign Equity" section={foreign} showZeroRows={showZeroRows} columns={visibleColumns} />
       <CapTable title="Combined Equity" section={combined} showZeroRows={showZeroRows} columns={visibleColumns} />
+
+      <CoverageNote coverage={coverage} />
+    </div>
+  );
+}
+
+// The page models only the Domestic/Foreign style box. Anything else that is
+// equity has to be named and quantified, or the 100% total silently overstates
+// what the reader is looking at.
+function CoverageNote({ coverage }) {
+  if (!coverage) return null;
+  if (coverage.complete) {
+    return (
+      <p className="text-xs text-text-primary/50">
+        This page covers all {formatCurrency(coverage.totalEquityPost)} of equity in scope.
+      </p>
+    );
+  }
+  return (
+    <div className="bg-dark-bg border border-border rounded px-3 py-2 text-xs">
+      <p className="text-text-primary/70">
+        Covers {formatCurrency(coverage.styledPost)} of {formatCurrency(coverage.totalEquityPost)} equity
+        {' '}({formatPercent(coverage.coveragePct)}). The following carry no size / value-growth style box and are
+        excluded from every figure above — they appear on the Summary tab:
+      </p>
+      <ul className="mt-1 space-y-0.5">
+        {coverage.excluded.map(e => (
+          <li key={e.category} className="text-text-primary/60">
+            <span className="text-steel-blue">{e.category}</span>
+            {' — '}{formatCurrency(e.post)}
+            {coverage.totalEquityPost > 0 && (
+              <span className="text-text-primary/40"> ({formatPercent(e.post / coverage.totalEquityPost)} of equity)</span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
