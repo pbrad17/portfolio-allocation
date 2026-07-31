@@ -1,25 +1,11 @@
 import { useState, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { TICKER_DB } from '../data/tickerDb';
-import { STYLE_OPTIONS } from '../data/styleMapping';
+import { regionBucket } from '../data/styleMapping';
 import { nameSimilarity, SIMILARITY_THRESHOLD } from '../utils/nameSimilarity';
 
 const BATCH_SIZE = 15;
 const BATCH_DELAY_MS = 350;
-
-const FOREIGN_EQUITY_STYLES = new Set(
-  STYLE_OPTIONS.filter(s => s.category === 'Foreign').map(s => s.style)
-);
-
-// Bucket an equity style by region only — size and value/growth differences
-// between the stored style and the live classification are not audit-worthy.
-function regionBucket(style) {
-  if (!style) return null;
-  if (style.startsWith('Domestic')) return 'Domestic';
-  if (FOREIGN_EQUITY_STYLES.has(style)) return 'Foreign';
-  if (style === 'Emerging Markets') return 'Emerging Markets';
-  return null;
-}
 
 // Skip cash placeholders ($$$$) and CUSIP-like identifiers (9-char
 // alphanumerics containing digits) that Yahoo won't recognize.

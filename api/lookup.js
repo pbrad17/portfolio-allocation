@@ -84,7 +84,8 @@ function raw(value) {
   return null;
 }
 
-function classifyEquity(meta, summary) {
+// Exported for unit tests; Vercel only ever calls the default handler export.
+export function classifyEquity(meta, summary) {
   const summaryDetail = summary?.summaryDetail || {};
   const keyStats = summary?.defaultKeyStatistics || {};
   const profile = summary?.summaryProfile || {};
@@ -121,22 +122,62 @@ function classifyEquity(meta, summary) {
   const forwardPE = raw(summaryDetail.forwardPE);
   const dividendYield = raw(summaryDetail.dividendYield);
 
-  let vg = 'Blend';
-  if ((pb != null && pb > 4) || (forwardPE != null && forwardPE > 25)) {
-    vg = 'Growth';
-  } else if (
-    (pb != null && pb < 1.5) ||
-    (forwardPE != null && forwardPE < 12 && dividendYield != null && dividendYield > 0.03)
-  ) {
-    vg = 'Value';
-  }
-
   return {
-    style: `${region} ${size} ${vg}`,
+    style: `${region} ${size} ${styleBox(pb, forwardPE, dividendYield)}`,
     category: profile.sector || null,
     country,
     confidence: 'review',
   };
+}
+
+// Value / Growth thresholds. Unchanged from the original heuristic — what
+// changed is that they no longer fire on their own (see styleBox).
+const PB_GROWTH = 4, PB_VALUE = 1.5;
+const PE_GROWTH = 25, PE_VALUE = 12;
+const YIELD_VALUE = 0.03;
+
+// One metric's opinion: 'Growth', 'Value', 'Blend' (has data, says neither),
+// or null when Yahoo gave us nothing to read.
+function metricVote(value, growthAbove, valueBelow) {
+  if (value == null) return null;
+  if (value > growthAbove) return 'Growth';
+  if (value < valueBelow) return 'Value';
+  return 'Blend';
+}
+
+// Place a stock in the value/growth axis of the style box.
+//
+// RECALIBRATED 2026-07-30. The previous rule called Growth on a rich P/B OR a
+// rich forward P/E, either one alone. That mislabels blend-y mega caps whose
+// book value has been shrunk by years of buybacks and intangible-heavy
+// balance sheets: Alphabet (P/B 6.6, forward P/E 22.6) came back Growth on
+// the P/B leg alone, as did Procter & Gamble (6.2 / 19.4) and Johnson &
+// Johnson (7.3 / 19.9) — all three boxed Large Blend or Value by Morningstar.
+//
+// Now each metric votes and a verdict needs CORROBORATION: two agreeing
+// non-neutral votes and nothing voting the other way. One rich (or cheap)
+// multiple against a neutral one is a Blend. Dividend yield only ever votes
+// Value — a high payout is real evidence of value, but a low or absent one
+// is not evidence of growth (plenty of blend names pay nothing).
+//
+// The trade is deliberate: the tail of genuine growth names that price on
+// only one metric now lands in Blend rather than a confidently wrong box.
+// Confidence stays 'review' either way, so the row shows the amber unverified
+// dot and the advisor confirms — and the ~900 large caps that would be most
+// affected resolve from TICKER_DB and never reach this code path.
+export function styleBox(pb, forwardPE, dividendYield) {
+  const votes = [
+    metricVote(pb, PB_GROWTH, PB_VALUE),
+    metricVote(forwardPE, PE_GROWTH, PE_VALUE),
+    dividendYield != null && dividendYield > YIELD_VALUE ? 'Value' : null,
+  ].filter(Boolean);
+
+  const growth = votes.filter(v => v === 'Growth').length;
+  const value = votes.filter(v => v === 'Value').length;
+
+  if (growth >= 2 && value === 0) return 'Growth';
+  if (value >= 2 && growth === 0) return 'Value';
+  return 'Blend';
 }
 
 function classify(meta, summary, name) {

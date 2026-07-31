@@ -64,6 +64,25 @@ export const TARGET_ROLLUP = {
   // dedicated target (see targetProfiles.js), so it no longer rolls into IG.
 };
 
+const FOREIGN_EQUITY_STYLES = new Set(
+  STYLE_OPTIONS.filter(s => s.category === 'Foreign').map(s => s.style)
+);
+
+// Bucket an equity style by REGION only. Used by the Database audit to decide
+// whether a live classification really disagrees with the stored one: size and
+// value/growth differences are heuristic judgement calls, not database errors,
+// so they are deliberately not audit-worthy. This is what keeps names like
+// GOOG/GOOGL quiet — a stored "Domestic Large Blend" and a live "Domestic
+// Large Growth" share the Domestic bucket and never enter the review queue.
+// Returns null for non-equity styles (bonds, cash, alternatives).
+export function regionBucket(style) {
+  if (!style) return null;
+  if (style.startsWith('Domestic')) return 'Domestic';
+  if (FOREIGN_EQUITY_STYLES.has(style)) return 'Foreign';
+  if (style === 'Emerging Markets') return 'Emerging Markets';
+  return null;
+}
+
 export const CAP_STYLES = [
   "Large Value", "Large Blend", "Large Growth",
   "Mid Value", "Mid Blend", "Mid Growth",
