@@ -56,6 +56,17 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   value tilt), gains: `getUnrealizedGain`, `getRealizedGain` (average-cost,
   sells only), `isLongTerm` (IRS MORE-than-one-year; anniversary day = ST),
   `getGainSummary`.
+- `src/utils/analytics.js` + `components/AnalysisPanel.jsx` — its own tab, so
+  no existing layout or the PDF is disturbed: rebalancing tolerance bands
+  (the 5/25 rule — breach on whichever of 5pp absolute / 25% relative is
+  TIGHTER; the relative band is what catches small sleeves), household
+  concentration on post-trade values, wash-sale exposure in the proposal
+  (a repurchase inside an IRA escalates to PERMANENT per Rev. Rul. 2008-5),
+  asset-location review, and projected income.
+- `src/utils/pieGeometry.js` — pure slice/wall math for the 3D summary pie.
+  The visible side wall is the FRONT rim only (angles 0..π); walls are
+  depth-sorted so nearer ones paint last. NOTE: `PieChartWidget` is always
+  mounted (hidden) for PDF capture, so a throw in it blanks the whole app.
 - `src/utils/importTable.js` — shared import core (header located under
   custodian preambles, column synonyms, Schwab/Fidelity quirks, TICKER_DB
   backfill). `csv.js` (no exceljs in its graph — keep it that way; its
@@ -103,6 +114,10 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   never `new Date()`.
 - Missing data is reported as MISSING, never as zero — expense ratios,
   dividend yields, and cost basis all follow this.
+- A page that models only part of the portfolio must SAY SO. The
+  Capitalization page covers the Domestic/Foreign style box only; its
+  `coverage` block names and prices the equity it excludes (Emerging Markets,
+  Real Estate, Other Equity, composites) on both the tab and the PDF.
 - EM domicile: Morningstar framework + advisor override (HK/Macau = EM).
 - Session JSON is v1.4; keep `loadSession` backward-compatible.
 
