@@ -10,17 +10,22 @@ degrade existing layouts, especially the PDF.
 
 ## Authoritative references (read before non-trivial work)
 
-- **Change log / decisions**: `C:\Users\bradf\OneDrive\Desktop\ClaudeCodingProjects\FinancialPlanningApps\PortfolioAllocationWorksheetApp\CLAUDE_PROJECT_MEMORY.md`
+- **Change log / decisions**: `C:\Users\bradf\OneDrive\Documents\Projects\Claude\ClaudeCodingProjects\FinancialPlanningApps\PortfolioAllocationWorksheetApp\CLAUDE_PROJECT_MEMORY.md`
   — newest-first entries. PREPEND a new entry for every shipped change
   (what/why/verification/commit hash). Advisor decisions recorded there are
   binding until he says otherwise.
-- **Official target model**: `C:\Users\bradf\Downloads\Official Client Workbook Template Updated March 2026 - FINAL UPDATES DRAFT.xlsx`
+- **Official target model**: `C:\Users\bradf\OneDrive\Documents\Projects\Claude\Portfolio Allocation\Source Templates\Official Client Workbook Template Updated March 2026 - FINAL UPDATES DRAFT.xlsx`
   → "Investment ETF model" sheet, "Hemington Model Allocations" grid.
   `src/data/targetProfiles.js` is GENERATED from it — regenerate by script,
   never hand-edit the numbers.
-- Real test sessions (JSON exports) live in the OneDrive folder above and in
-  `Downloads` (Andrews Family; Jay & Angie Norman — $26.9M, 14 accounts,
-  457 holdings, ~123 CUSIP-ticker muni bonds; the standard stress case).
+- Real test sessions (JSON exports): Andrews Family / Smith Family sit beside
+  the change log in the OneDrive folder above, and the advisor's own saves are
+  in `OneDrive\Documents\Projects\Claude\Tool Outputs\Portfolio Allocation`
+  (newest in `OneDrive\Documents\Personal\Finance & Investing`) — all small,
+  5-ish accounts. The standard stress case (Jay & Angie Norman — $26.9M,
+  14 accounts, 457 holdings, ~123 CUSIP-ticker muni bonds) is NO LONGER on
+  this machine; ask the advisor to re-export it before any scale/PDF
+  pagination work.
 
 ## Stack & architecture
 
@@ -63,6 +68,24 @@ heuristics, and equity metadata; also expense ratios). NOTE: bare
   concentration on post-trade values, wash-sale exposure in the proposal
   (a repurchase inside an IRA escalates to PERMANENT per Rev. Rul. 2008-5),
   asset-location review, and projected income.
+- `src/utils/householdPositions.js` + `components/PositionsPanel.jsx` —
+  Positions tab (between Securities and Summary): ONE ROW PER SECURITY summed
+  across every account, which the account-organized Securities tab cannot
+  show. Grouped by ticker, falling back to security name so a no-symbol bond
+  still consolidates; a row with neither is counted in the household total and
+  DISCLOSED, never dropped. Keeps cash (household cash is a headline number)
+  but never calls cash the largest holding. Per-position tax-location split
+  from `taxStatus`, expandable per-account lots, and conflict flags where one
+  security is styled / priced / named differently in different accounts — a
+  style conflict means the Summary is splitting it across sleeves. Cash is
+  EXEMPT from the price check (stored as dollars x price 1, but an import can
+  land as 1 x balance; a cash unit price cannot go stale). Values always come
+  from each lot's own quantity x price, so the page ties out to the Summary
+  exactly: its household figure equals the Summary's Overall grand total and
+  its managed figure equals the Portfolio one. Basis follows the usual rule —
+  a gain covering only some lots is marked `*`, no basis at all is an em-dash.
+  Deliberately separate from `getConcentration` in analytics.js, which drops
+  cash and answers a different question.
 - `src/utils/pieGeometry.js` — pure slice/wall math for the 3D summary pie.
   The visible side wall is the FRONT rim only (angles 0..π); walls are
   depth-sorted so nearer ones paint last. NOTE: `PieChartWidget` is always
@@ -129,7 +152,7 @@ changes box sizes, which is what keeps the PDF out of scope.
   `coverage` block names and prices the equity it excludes (Emerging Markets,
   Real Estate, Other Equity, composites) on both the tab and the PDF.
 - EM domicile: Morningstar framework + advisor override (HK/Macau = EM).
-- Session JSON is v1.4; keep `loadSession` backward-compatible.
+- Session JSON is v1.5 (v1.5 added per-account taxStatus); keep `loadSession` backward-compatible.
 
 ## Client-data constraint (BINDING)
 

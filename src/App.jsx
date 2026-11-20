@@ -2,6 +2,7 @@ import { AppProvider, useAppContext } from './AppContext';
 import { formatDate } from './utils/formatting';
 import AssumptionsPanel from './components/AssumptionsPanel';
 import SecuritiesPanel from './components/SecuritiesPanel';
+import PositionsPanel from './components/PositionsPanel';
 import SummaryPanel from './components/SummaryPanel';
 import CapitalizationPanel from './components/CapitalizationPanel';
 import AnalysisPanel from './components/AnalysisPanel';
@@ -14,6 +15,7 @@ import PieChartWidget from './components/PieChartWidget';
 const TABS = [
   { id: 'assumptions', label: 'Assumptions' },
   { id: 'securities', label: 'Securities' },
+  { id: 'positions', label: 'Positions' },
   { id: 'summary', label: 'Summary' },
   { id: 'capitalization', label: 'Capitalization' },
   { id: 'analysis', label: 'Analysis' },
@@ -134,6 +136,7 @@ function AppContent() {
       <div key={activeTab} className="p-6 bp-panel-enter">
         {activeTab === 'assumptions' && <AssumptionsPanel />}
         {activeTab === 'securities' && <SecuritiesPanel />}
+        {activeTab === 'positions' && <PositionsPanel />}
         {activeTab === 'summary' && <SummaryPanel />}
         {activeTab === 'capitalization' && <CapitalizationPanel />}
         {activeTab === 'analysis' && <AnalysisPanel />}
